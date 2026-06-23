@@ -2,7 +2,8 @@
 
 import { useParams } from "next/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Activity, Building2, ExternalLink, Globe, Loader2, MessageSquare, Send, Sparkles, Users } from "lucide-react";
+import { Activity, Building2, DollarSign, ExternalLink, Globe, Layers, Loader2, MapPin, MessageSquare, Send, Sparkles, TrendingUp, Users } from "lucide-react";
+import { fmtMoney } from "@/lib/utils";
 import { toast } from "sonner";
 
 import { api } from "@/lib/api";
@@ -56,6 +57,11 @@ export default function LeadDetailPage() {
     onSuccess: () => { toast.success("Scored"); qc.invalidateQueries({ queryKey: ["score", id] }); },
     onError: (e: any) => toast.error(e.message),
   });
+  const enrich = useMutation({
+    mutationFn: () => api.post<Company>(`/companies/${id}/enrich`),
+    onSuccess: () => { toast.success("Enriched"); qc.invalidateQueries({ queryKey: ["company", id] }); qc.invalidateQueries({ queryKey: ["signals", id] }); },
+    onError: (e: any) => toast.error(e.message),
+  });
 
   if (company.isLoading || !company.data) return <div className="text-sm text-muted-foreground">Loading…</div>;
   const c = company.data;
@@ -80,7 +86,11 @@ export default function LeadDetailPage() {
             </div>
           </div>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap justify-end">
+          <Button variant="outline" size="sm" onClick={() => enrich.mutate()} disabled={enrich.isPending}>
+            {enrich.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Layers className="h-3.5 w-3.5" />}
+            Enrich
+          </Button>
           <Button variant="outline" size="sm" onClick={() => detect.mutate()} disabled={detect.isPending}>
             {detect.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Activity className="h-3.5 w-3.5" />}
             Detect signals
@@ -95,6 +105,9 @@ export default function LeadDetailPage() {
           </Button>
         </div>
       </div>
+
+      {/* Firmographics */}
+      <FirmographicsCard c={c} />
 
       {/* Score summary */}
       <div className="grid lg:grid-cols-3 gap-4">
@@ -241,6 +254,58 @@ export default function LeadDetailPage() {
         </TabsContent>
       </Tabs>
     </div>
+  );
+}
+
+
+function FirmographicsCard({ c }: { c: Company }) {
+  const hq = [c.city, c.region, c.country].filter(Boolean).join(", ");
+  const cells = [
+    { icon: Layers, label: "Industry", value: c.industry || "—" },
+    { icon: Users, label: "Employees", value: c.employee_count ? `${c.employee_count}${c.employee_range ? ` (${c.employee_range})` : ""}` : c.employee_range || "—" },
+    { icon: DollarSign, label: "Revenue", value: c.revenue_usd ? fmtMoney(c.revenue_usd) : c.revenue_range || "—" },
+    { icon: TrendingUp, label: "Funding", value: c.funding_total_usd ? `${fmtMoney(c.funding_total_usd)}${c.last_funding_stage ? ` · ${c.last_funding_stage}` : ""}` : c.last_funding_stage || "—" },
+    { icon: MapPin, label: "HQ", value: hq || "—" },
+    { icon: Building2, label: "Founded", value: c.founded_year ? String(c.founded_year) : "—" },
+  ];
+  return (
+    <Card>
+      <CardHeader className="pb-3">
+        <CardTitle className="flex items-center gap-2 text-sm">
+          Firmographics
+          {c.enriched
+            ? <Badge variant="success">enriched</Badge>
+            : <Badge variant="outline">not enriched</Badge>}
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+          {cells.map(({ icon: Icon, label, value }) => (
+            <div key={label} className="rounded-md border border-white/5 bg-white/[0.02] px-3 py-2">
+              <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+                <Icon className="h-3 w-3" /> {label}
+              </div>
+              <div className="mt-0.5 text-sm font-medium truncate">{value}</div>
+            </div>
+          ))}
+        </div>
+        {c.tech_stack && c.tech_stack.length > 0 && (
+          <div>
+            <div className="text-[11px] uppercase tracking-wider text-muted-foreground mb-1.5">
+              Tech stack ({c.tech_stack.length})
+            </div>
+            <div className="flex flex-wrap gap-1.5">
+              {c.tech_stack.map((t) => <Badge key={t} variant="info">{t}</Badge>)}
+            </div>
+          </div>
+        )}
+        {c.description && (
+          <p className="text-sm text-muted-foreground leading-relaxed border-t border-white/5 pt-3">
+            {c.description}
+          </p>
+        )}
+      </CardContent>
+    </Card>
   );
 }
 

@@ -45,7 +45,9 @@ _JUNK_DOMAINS = {
 # Title patterns that signal a content/listicle/explainer page, not a company.
 _JUNK_TITLE_PATTERNS = [
     r"^\s*what\s+is\b", r"^\s*how\s+to\b", r"^\s*why\b", r"\bguide\b",
-    r"\btop\s+\d+\b", r"\bbest\s+\d*\s*\w*\s*(companies|services|tools|platforms|software|vendors)\b",
+    r"\btop\s+\d+\b",
+    r"\bbest\s+[\w&/\s]*?(companies|services|solutions|tools|platforms|software|vendors|providers|firms|agencies)\b",
+    r"\b(companies|services|tools|platforms|software|vendors|providers)\s+(for|to)\b",
     r"\b\d+\s+(best|top)\b", r"\bvs\.?\b", r"\balternatives?\b", r"\bcomparison\b",
     r"\breview(s|ed)?\b", r"\branked\b", r"\blist of\b", r"\bexamples?\b",
     r"\b(ultimate|complete|beginner'?s)\s+guide\b", r"\bblog\b", r"\bnews\b",
@@ -184,6 +186,7 @@ def ai_qualify(candidates: list[Candidate], *, min_confidence: int = 55) -> list
             "company_name": (r.get("company_name") or c.title).strip(),
             "industry": (r.get("industry") or "").strip(),
             "confidence": int(r.get("confidence", 0)),
+            "ai_verified": True,   # this row came from a real AI judgment
         })
     return results
 
@@ -193,7 +196,7 @@ def qualify_candidates(candidates: list[Candidate], *, min_confidence: int = 55
     """Full pipeline: deterministic reject → AI classify the survivors.
 
     Returns (accepted, stats) where accepted is a list of
-        {"candidate": Candidate, "company_name", "industry", "confidence"}
+        {"candidate", "company_name", "industry", "confidence", "ai_verified"}
     and stats summarizes the funnel for logging/telemetry.
     """
     stats = {"total": len(candidates), "rejected_deterministic": 0,
@@ -217,6 +220,7 @@ def qualify_candidates(candidates: list[Candidate], *, min_confidence: int = 55
                 "company_name": j["company_name"],
                 "industry": j["industry"],
                 "confidence": j["confidence"],
+                "ai_verified": j.get("ai_verified", True),
             })
         else:
             stats["rejected_ai"] += 1

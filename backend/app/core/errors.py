@@ -43,9 +43,14 @@ class AIUnavailable(AppError):
 def register_error_handlers(app) -> None:
     @app.exception_handler(RequestValidationError)
     async def _validation(request: Request, exc: RequestValidationError):
+        # exc.errors() may embed a non-serializable exception object in `ctx`
+        # (Pydantic v2 puts the raised ValueError there). jsonable_encoder
+        # coerces those to strings so the 422 body is always serializable.
+        from fastapi.encoders import jsonable_encoder
         return JSONResponse(
             status_code=422,
-            content={"code": "validation_error", "errors": exc.errors()},
+            content={"code": "validation_error",
+                     "errors": jsonable_encoder(exc.errors())},
         )
 
     @app.exception_handler(IntegrityError)

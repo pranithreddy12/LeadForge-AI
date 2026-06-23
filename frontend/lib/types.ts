@@ -67,6 +67,8 @@ export interface Company {
   enriched: boolean;
   source?: string | null;
   icp_id?: ID | null;
+  funding_total_usd?: number | null;
+  last_funding_stage?: string | null;
   created_at: string;
   updated_at: string;
 }

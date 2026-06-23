@@ -59,7 +59,9 @@ def detect_for_company(db: Session, company: Company, icp_keywords: list[str]) -
         for s in extract_signals_from_text(
             company_name=name, source="news", text=news_text
         ):
-            s["source"] = "news"
+            # setdefault, NOT assignment: a demo fixture already carries
+            # source="demo" — never relabel it as a real provider source.
+            s.setdefault("source", "news")
             found.append(s)
 
     tav = tavily_search(f"{name} product launch OR hiring OR funding 2026", max_results=5)
@@ -71,7 +73,7 @@ def detect_for_company(db: Session, company: Company, icp_keywords: list[str]) -
         for s in extract_signals_from_text(
             company_name=name, source="tavily", text=tav_text
         ):
-            s["source"] = "tavily"
+            s.setdefault("source", "tavily")
             found.append(s)
 
     # ---- 3. Careers page tech_install / growth ------------------------------
@@ -82,7 +84,7 @@ def detect_for_company(db: Session, company: Company, icp_keywords: list[str]) -
         for s in extract_signals_from_text(
             company_name=name, source="careers", text=page, url=url
         ):
-            s["source"] = "careers"
+            s.setdefault("source", "careers")
             found.append(s)
 
     return _persist_signals(db, company, found)
@@ -91,6 +93,13 @@ def detect_for_company(db: Session, company: Company, icp_keywords: list[str]) -
 def _persist_signals(db: Session, company: Company, found: list[dict]) -> list[Signal]:
     if not found:
         return []
+    # Defense in depth: if a REAL LLM provider is configured, never persist a
+    # demo-sourced signal. Demo signals only legitimately exist in zero-key mode.
+    from app.ai.openai_client import current_provider
+    if current_provider() != "demo":
+        found = [s for s in found if s.get("source") != "demo"]
+        if not found:
+            return []
     # Dedupe within this batch by (kind, label).
     seen: dict[tuple[str, str], dict] = {}
     for s in found:

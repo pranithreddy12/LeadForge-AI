@@ -39,6 +39,14 @@ _MAX_TRANSIENT_RETRIES = 3
 # breaker: subsequent calls fail fast (no network, no sleep) until a cooldown
 # elapses, then we try one probe. `monotonic` is import-time safe (unlike the
 # wall clock helpers that are stubbed in workflow scripts).
+#
+# SCOPE (intentional): this state is PER-PROCESS and best-effort. With Celery's
+# prefork pool (concurrency=2) each worker child trips its own breaker, and a
+# child recycle (worker_max_tasks_per_child) resets it. That's acceptable — it
+# still bounds wasted retries within each process's task stream, which is where
+# the cost lives. A Redis-backed shared breaker was considered and rejected: it
+# would add a network round-trip to EVERY llm call to save a handful of slow
+# calls per child per cooldown window. Not worth the latency at this scale.
 _CB_FAIL_THRESHOLD = 3
 _CB_COOLDOWN_SECONDS = 120
 _cb_consecutive_failures = 0
@@ -331,7 +339,17 @@ def embed(texts: list[str]) -> list[list[float]]:
     if p == "openai" or "embedding-001" in _model_embedding():
         kwargs["dimensions"] = target_dim
 
-    response = client().embeddings.create(**kwargs)
+    # Route through the breaker too: the embeddings backfill is exactly the
+    # batch job the breaker exists to protect from per-call quota retries.
+    try:
+        response = _with_retry(lambda: client().embeddings.create(**kwargs), what="embed")
+    except APIError:
+        # Real provider unavailable → return [] (NOT fabricated vectors). The
+        # caller (upsert_company_embedding) leaves embedding_pending=True so the
+        # row is retried next cycle instead of being polluted with a mismatched-
+        # space vector. Demo embeddings are only for the no-key path above.
+        log.warning("embed_provider_unavailable", n=len(texts))
+        return []
     return [d.embedding for d in response.data]
 
 

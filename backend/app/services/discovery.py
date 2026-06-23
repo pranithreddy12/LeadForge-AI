@@ -35,6 +35,7 @@ class DiscoveredCompany:
     source: str
     industry: str | None = None
     confidence: int | None = None
+    ai_verified: bool = True
 
 
 def _domain_from_url(url: str) -> str | None:
@@ -114,6 +115,7 @@ def discover_via_search(icp: ICP, *, limit: int = 25,
             source=c.source,
             industry=a["industry"] or None,
             confidence=a["confidence"],
+            ai_verified=a.get("ai_verified", True),
         ))
     return out
 
@@ -161,7 +163,8 @@ def persist_candidates(
             description=c.description,
             industry=c.industry,
             source=c.source,
-            raw={"qualification_confidence": c.confidence} if c.confidence is not None else {},
+            raw={"qualification_confidence": c.confidence,
+                 "ai_verified": c.ai_verified},
         )
         db.add(row)
         out.append(row)

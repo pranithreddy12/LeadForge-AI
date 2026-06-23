@@ -68,17 +68,19 @@ def enrich_company(db: Session, company: Company) -> dict:
 
     # --- 1. Deterministic tech-stack (always real, no LLM) -------------------
     tech: list[dict] = []
+    newly_added_tech = 0
     if company.domain:
         raw = fetch_raw_html(f"https://{company.domain}")
         tech = detect_tech(raw)
         if tech:
             existing = set(company.tech_stack or [])
-            merged = sorted(existing | set(product_names(tech)))
-            company.tech_stack = merged
-            summary["tech"] = len(tech)
+            incoming = set(product_names(tech))
+            newly_added_tech = len(incoming - existing)
+            if newly_added_tech:
+                company.tech_stack = sorted(existing | incoming)
+            summary["tech"] = newly_added_tech     # count NEW products, not all
             # persist tech_install signals (deduped by label)
-            sig_summary = _persist_tech_signals(db, company, tech_to_signals(tech))
-            summary["signals"] = sig_summary
+            summary["signals"] = _persist_tech_signals(db, company, tech_to_signals(tech))
 
     # --- 2. LLM firmographic extraction -------------------------------------
     website_text = _gather_website_text(company)
@@ -143,13 +145,22 @@ def _apply_profile(company: Company, p: dict) -> int:
     setif("linkedin_url", p.get("linkedin_url"))
 
     # funding data lives in raw (no dedicated columns) — keep it queryable.
-    funding = {
+    # Merge into the existing funding sub-dict, only overwriting with non-null
+    # new values, so a partial re-enrich never drops previously-known funding.
+    new_funding = {
         "funding_total_usd": p.get("funding_total_usd"),
         "last_funding_stage": p.get("last_funding_stage"),
     }
-    if any(funding.values()):
-        company.raw = {**(company.raw or {}), "funding": funding,
-                       "enrichment_confidence": p.get("confidence")}
+    if any(v is not None for v in new_funding.values()):
+        raw = dict(company.raw or {})
+        prev = dict(raw.get("funding") or {})
+        for k, v in new_funding.items():
+            if v is not None:
+                prev[k] = v
+        raw["funding"] = prev
+        if p.get("confidence") is not None:
+            raw["enrichment_confidence"] = p["confidence"]
+        company.raw = raw
         n += 1
     return n
 
