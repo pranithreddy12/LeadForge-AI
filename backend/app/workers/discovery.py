@@ -28,11 +28,15 @@ def discover_companies_task(self, organization_id: str, icp_id: str,
         except Exception as exc:
             log.exception("discover_failed")
             raise self.retry(exc=exc)
-        # Fan out signal detection per company.
+        # Fan out enrichment THEN signal detection per company. Enrichment runs
+        # first so scoring has firmographics + tech_install signals to work with.
         for c in rows:
-            detect_signals_task = celery.signature(
+            celery.signature(
+                "app.workers.enrichment.enrich_company_task",
+                args=[organization_id, str(c.id)],
+            ).apply_async(queue="discovery")
+            celery.signature(
                 "app.workers.signals.detect_signals_task",
                 args=[organization_id, str(c.id)],
-            )
-            detect_signals_task.apply_async(queue="default")
+            ).apply_async(queue="default", countdown=5)
         return {"created": len(rows)}

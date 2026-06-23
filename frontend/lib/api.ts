@@ -5,7 +5,7 @@
  * which proxies to FastAPI under /api/v1. On the server we hit the API directly via
  * NEXT_PUBLIC_API_URL (or API_PUBLIC_URL).
  */
-import { auth } from "@clerk/nextjs/server";
+import { clerkConfigured } from "./clerk-config";
 
 const SERVER_BASE = (process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000") + "/api/v1";
 const BROWSER_BASE = "/api/backend";
@@ -13,7 +13,13 @@ const BROWSER_BASE = "/api/backend";
 export type ApiError = { code: string; message: string; status: number };
 
 async function withAuth(): Promise<HeadersInit> {
+  // Demo mode: no Clerk → no token. The backend's dev-auth bypass seats the
+  // request as the seeded demo user, so unauthenticated calls succeed.
+  if (!clerkConfigured) return {};
+
   if (typeof window === "undefined") {
+    // Server component / route handler: pull the token from the Clerk session.
+    const { auth } = await import("@clerk/nextjs/server");
     const { getToken } = await auth();
     const token = await getToken();
     return token ? { Authorization: `Bearer ${token}` } : {};

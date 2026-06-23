@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 
 from app.models.company import Company
 from app.models.scoring import LeadScore
+from app.models.tenant import Organization
 
 
 def kpi_block(db: Session, organization_id: uuid.UUID) -> dict:
@@ -53,6 +54,22 @@ def kpi_block(db: Session, organization_id: uuid.UUID) -> dict:
     ).scalar_one() or 1
     conv = round(100.0 * won / total, 1)
 
+    # Pipeline value is derived from the real per-account revenue we discovered,
+    # using a configurable win-rate × deal-size-as-%-of-revenue, NOT a flat
+    # per-deal constant. Falls back to the org's configured ACV only when no
+    # revenue data exists for the in-flight accounts.
+    in_flight_revenue = db.execute(
+        select(func.coalesce(func.sum(Company.revenue_usd), 0)).where(
+            Company.organization_id == organization_id,
+            Company.pipeline_stage.in_(["qualified", "contacted", "replied",
+                                        "meeting", "proposal", "won"]),
+        )
+    ).scalar_one() or 0
+    org = db.get(Organization, organization_id)
+    deal_pct = float((org.settings or {}).get("deal_size_pct_of_revenue", 0.02)) if org else 0.02
+    default_acv = int((org.settings or {}).get("default_acv_usd", 12_000)) if org else 12_000
+    pipeline_value = int(in_flight_revenue * deal_pct) if in_flight_revenue else int(won) * default_acv
+
     return {
         "leads_found": {
             "label": "Leads found (7d)",
@@ -76,7 +93,7 @@ def kpi_block(db: Session, organization_id: uuid.UUID) -> dict:
         },
         "revenue": {
             "label": "Pipeline (est)",
-            "value": int(won) * 10_000,
+            "value": pipeline_value,
             "delta_pct": None,
         },
     }

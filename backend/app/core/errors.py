@@ -35,6 +35,11 @@ class RateLimited(AppError):
         super().__init__(429, "rate_limited", "Too many requests", retry_after=retry_after)
 
 
+class AIUnavailable(AppError):
+    def __init__(self, detail: str = "AI provider temporarily unavailable (rate-limited). Try again shortly."):
+        super().__init__(503, "ai_unavailable", detail)
+
+
 def register_error_handlers(app) -> None:
     @app.exception_handler(RequestValidationError)
     async def _validation(request: Request, exc: RequestValidationError):

@@ -8,6 +8,7 @@ from app.api.v1.routes import (
     contacts,
     signals,
     scoring,
+    opportunities,
     campaigns,
     crm,
     workflows,
@@ -25,6 +26,7 @@ api_router.include_router(companies.router)
 api_router.include_router(contacts.router)
 api_router.include_router(signals.router)
 api_router.include_router(scoring.router)
+api_router.include_router(opportunities.router)
 api_router.include_router(campaigns.router)
 api_router.include_router(crm.router)
 api_router.include_router(workflows.router)

@@ -8,6 +8,7 @@ from urllib.parse import urlparse
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.ai.qualification_engine import Candidate, qualify_candidates
 from app.core.logging import get_logger
 from app.models.company import Company
 from app.models.icp import ICP
@@ -32,6 +33,8 @@ class DiscoveredCompany:
     description: str | None
     linkedin_url: str | None
     source: str
+    industry: str | None = None
+    confidence: int | None = None
 
 
 def _domain_from_url(url: str) -> str | None:
@@ -76,40 +79,55 @@ def build_queries(icp: ICP, extra_keywords: list[str] | None = None) -> list[str
 
 def discover_via_search(icp: ICP, *, limit: int = 25,
                         extra_keywords: list[str] | None = None) -> list[DiscoveredCompany]:
-    """Run Tavily + Serper and synthesize a deduped candidate list."""
+    """Run Tavily + Serper, then run every raw result through the Company
+    Qualification Engine so only real operating companies are returned.
+
+    Returns deduped, qualified companies with AI-cleaned names + industries.
+    """
     queries = build_queries(icp, extra_keywords)
-    seen: dict[str, DiscoveredCompany] = {}
+    raw: dict[str, Candidate] = {}   # keyed by domain to dedupe early
 
     for q in queries:
         for hit in tavily_search(q, max_results=10):
-            _ingest(seen, hit.get("title"), hit.get("url"), hit.get("content"),
-                    source="tavily")
+            src = "demo" if hit.get("demo") else "tavily"
+            _collect(raw, hit.get("title"), hit.get("url"), hit.get("content"), source=src)
         for hit in serper_search(q, max_results=10):
-            _ingest(seen, hit.get("title"), hit.get("link"), hit.get("snippet"),
-                    source="serper")
-        if len(seen) >= limit * 2:
+            src = "demo" if hit.get("demo") else "serper"
+            _collect(raw, hit.get("title"), hit.get("link"), hit.get("snippet"), source=src)
+        # collect a bit more than `limit` so qualification has room to reject.
+        if len(raw) >= limit * 4:
             break
 
-    return list(seen.values())[:limit]
+    candidates = list(raw.values())
+    accepted, stats = qualify_candidates(candidates)
+    log.info("discovery_qualified", **stats)
+
+    out: list[DiscoveredCompany] = []
+    for a in accepted[:limit]:
+        c: Candidate = a["candidate"]
+        out.append(DiscoveredCompany(
+            name=a["company_name"] or _normalize_name(c.title),
+            domain=c.domain,
+            website=f"https://{c.domain}",
+            description=(c.snippet or "")[:1000] or None,
+            linkedin_url=None,
+            source=c.source,
+            industry=a["industry"] or None,
+            confidence=a["confidence"],
+        ))
+    return out
 
 
-def _ingest(seen: dict, title: str | None, url: str | None, snippet: str | None,
-            *, source: str) -> None:
+def _collect(seen: dict, title: str | None, url: str | None, snippet: str | None,
+             *, source: str) -> None:
+    """Gather a raw candidate (pre-qualification), deduped by domain."""
     if not (title and url):
         return
     domain = _domain_from_url(url)
-    if _is_excluded(domain):
+    if _is_excluded(domain) or domain in seen:
         return
-    if domain in seen:
-        return
-    seen[domain] = DiscoveredCompany(
-        name=_normalize_name(title),
-        domain=domain,
-        website=f"https://{domain}",
-        description=(snippet or "")[:1000] or None,
-        linkedin_url=None,
-        source=source,
-    )
+    seen[domain] = Candidate(title=title, url=url, domain=domain,
+                             snippet=snippet, source=source)
 
 
 def persist_candidates(
@@ -141,7 +159,9 @@ def persist_candidates(
             website=c.website,
             linkedin_url=c.linkedin_url,
             description=c.description,
+            industry=c.industry,
             source=c.source,
+            raw={"qualification_confidence": c.confidence} if c.confidence is not None else {},
         )
         db.add(row)
         out.append(row)

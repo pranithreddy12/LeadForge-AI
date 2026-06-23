@@ -66,4 +66,8 @@ def opportunity(company_id: uuid.UUID, icp_id: uuid.UUID,
         company={c.key: getattr(company, c.key) for c in company.__table__.columns},
         signals=[{c.key: getattr(s, c.key) for c in s.__table__.columns} for s in signals],
     )
+    if raw.get("_provider_error") or "probability" not in raw:
+        from app.core.errors import AIUnavailable
+        raise AIUnavailable()
+    raw.pop("_provider_error", None)
     return OpportunityAnalysis(company_id=company.id, **raw)

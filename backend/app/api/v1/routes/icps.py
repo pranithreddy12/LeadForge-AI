@@ -47,6 +47,9 @@ def generate(
         target_offering=payload.target_offering,
         hints=payload.hints,
     )
+    if raw.get("_provider_error") or not raw.get("name"):
+        from app.core.errors import AIUnavailable
+        raise AIUnavailable()
 
     icp = ICP(
         project_id=project.id,

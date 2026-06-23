@@ -4,20 +4,21 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   LayoutDashboard, Sparkles, Building2, Users, Activity, Target,
-  Workflow as WorkflowIcon, MessageSquare, Settings, Send, CreditCard,
+  Workflow as WorkflowIcon, MessageSquare, Settings, Send, CreditCard, Crosshair,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const nav = [
-  { href: "/dashboard",  label: "Dashboard",  icon: LayoutDashboard },
-  { href: "/icp",        label: "AI ICP",     icon: Sparkles },
-  { href: "/leads",      label: "Leads",      icon: Building2 },
-  { href: "/contacts",   label: "Contacts",   icon: Users },
-  { href: "/signals",    label: "Signals",    icon: Activity },
-  { href: "/crm",        label: "CRM",        icon: Target },
-  { href: "/campaigns",  label: "Campaigns",  icon: Send },
-  { href: "/workflows",  label: "Workflows",  icon: WorkflowIcon },
-  { href: "/chat",       label: "Ask AI",     icon: MessageSquare },
+  { href: "/dashboard",     label: "Dashboard",     icon: LayoutDashboard },
+  { href: "/icp",           label: "AI ICP",        icon: Sparkles },
+  { href: "/opportunities", label: "Opportunities", icon: Crosshair },
+  { href: "/leads",         label: "Leads",         icon: Building2 },
+  { href: "/contacts",      label: "Contacts",      icon: Users },
+  { href: "/signals",       label: "Signals",       icon: Activity },
+  { href: "/crm",           label: "CRM",           icon: Target },
+  { href: "/campaigns",     label: "Campaigns",     icon: Send },
+  { href: "/workflows",     label: "Workflows",     icon: WorkflowIcon },
+  { href: "/chat",          label: "Ask AI",        icon: MessageSquare },
 ];
 
 const footerNav = [

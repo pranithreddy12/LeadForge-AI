@@ -3,6 +3,7 @@
 import { UserButton, OrganizationSwitcher } from "@clerk/nextjs";
 import { Search, Sparkles, Command } from "lucide-react";
 import { Input } from "@/components/ui/input";
+import { clerkConfigured } from "@/lib/clerk-config";
 
 export function Topbar() {
   return (
@@ -22,13 +23,35 @@ export function Topbar() {
         <Sparkles className="h-3.5 w-3.5 text-brand-400" /> Ask AI
       </button>
 
-      <OrganizationSwitcher
-        appearance={{ elements: { rootBox: "h-9", organizationSwitcherTrigger: "h-9 px-2" } }}
-        afterCreateOrganizationUrl="/dashboard"
-        afterSelectOrganizationUrl="/dashboard"
-      />
-
-      <UserButton appearance={{ elements: { userButtonAvatarBox: "h-8 w-8" } }} />
+      {clerkConfigured ? (
+        <>
+          <OrganizationSwitcher
+            appearance={{ elements: { rootBox: "h-9", organizationSwitcherTrigger: "h-9 px-2" } }}
+            afterCreateOrganizationUrl="/dashboard"
+            afterSelectOrganizationUrl="/dashboard"
+          />
+          <UserButton appearance={{ elements: { userButtonAvatarBox: "h-8 w-8" } }} />
+        </>
+      ) : (
+        <DemoUserChip />
+      )}
     </header>
+  );
+}
+
+/** Stand-in for the Clerk user/org widgets when running in demo mode. */
+function DemoUserChip() {
+  return (
+    <div className="flex items-center gap-2">
+      <span className="hidden sm:inline-flex items-center gap-1 rounded-md border border-amber-500/30 bg-amber-500/10 px-2 py-1 text-[11px] text-amber-300">
+        Demo mode
+      </span>
+      <div className="flex items-center gap-2 rounded-md border border-white/10 bg-card/40 px-2 py-1">
+        <div className="flex h-6 w-6 items-center justify-center rounded-full bg-gradient-to-br from-brand-500 to-brand-700 text-[11px] font-semibold text-white">
+          DF
+        </div>
+        <span className="hidden sm:inline text-xs text-muted-foreground">Demo Founder</span>
+      </div>
+    </div>
   );
 }

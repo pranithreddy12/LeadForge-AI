@@ -1,6 +1,7 @@
 import { clerkMiddleware, createRouteMatcher } from "@clerk/nextjs/server";
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
+import { clerkConfigured } from "@/lib/clerk-config";
 
 const isPublic = createRouteMatcher([
   "/",
@@ -11,12 +12,8 @@ const isPublic = createRouteMatcher([
 ]);
 
 // Dev fallback: when Clerk isn't configured (placeholder keys), don't run the
-// Clerk middleware — it would crash on every request. The marketing page still
-// renders; authed routes will surface their own "Clerk not configured" error.
-const clerkKey = process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY ?? "";
-const clerkConfigured =
-  clerkKey.startsWith("pk_") && !clerkKey.endsWith("xxx") && !clerkKey.endsWith("placeholder");
-
+// Clerk middleware — it would crash on every request. In demo mode the backend
+// seats every request as the seeded demo user, so authed pages render fine.
 const handler = clerkConfigured
   ? clerkMiddleware(async (auth, req) => {
       if (!isPublic(req)) {

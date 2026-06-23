@@ -56,6 +56,17 @@ class Settings(BaseSettings):
     openai_model_embedding: str = "text-embedding-3-large"
     openai_embedding_dim: int = 1536  # truncated via OpenAI dimensions param; fits HNSW
 
+    # Google Gemini (alternative LLM provider via OpenAI-compat endpoint).
+    # If set AND OpenAI is unset, all OpenAI client calls route to Gemini.
+    # Free tier: https://aistudio.google.com/apikey
+    gemini_api_key: str = ""
+    # flash-lite has the most generous free-tier quota; the heavier flash models
+    # frequently return 429 on the free tier. Override via env if you have paid quota.
+    gemini_model_reasoning: str = "gemini-2.5-flash-lite"
+    gemini_model_fast: str = "gemini-2.5-flash-lite"
+    gemini_model_embedding: str = "gemini-embedding-001"
+    gemini_base_url: str = "https://generativelanguage.googleapis.com/v1beta/openai/"
+
     # Search providers
     tavily_api_key: str = ""
     serper_api_key: str = ""

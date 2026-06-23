@@ -62,6 +62,22 @@ async def _fetch_playwright(url: str) -> str:
     return _strip_html(html)
 
 
+def fetch_raw_html(url: str, *, timeout: float = 15.0) -> str:
+    """Fetch the RAW html (scripts/links intact) for tech-stack fingerprinting.
+    Unlike fetch_static this does NOT strip tags — the markers we look for live
+    in <script src>, <link>, and inline JS. Static-only (no Playwright) to keep
+    it cheap; most tech markers are present in the initial HTML."""
+    try:
+        with httpx.Client(headers={"User-Agent": USER_AGENT}, follow_redirects=True,
+                          timeout=timeout) as client:
+            r = client.get(url)
+            r.raise_for_status()
+            return r.text[:400_000]
+    except Exception as e:
+        log.info("raw_fetch_failed", url=url, error=str(e))
+        return ""
+
+
 # Heuristics for finding the careers/jobs page of a domain.
 CAREER_HINT_PATTERNS = [
     "/careers", "/jobs", "/work-with-us", "/join", "/hiring",

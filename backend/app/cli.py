@@ -23,6 +23,7 @@ log = get_logger("cli")
 # right shape). Used by `keys` command and the demo-mode gates.
 KEY_CHECKS: dict[str, tuple[str, callable]] = {
     "openai":      ("openai_api_key",       lambda k: k.startswith("sk-")  and len(k) > 30),
+    "gemini":      ("gemini_api_key",       lambda k: len(k) > 20),
     "tavily":      ("tavily_api_key",       lambda k: k.startswith("tvly-") and len(k) > 20),
     "serper":      ("serper_api_key",       lambda k: len(k) >= 32 and all(c.isalnum() for c in k)),
     "hunter":      ("hunter_api_key",       lambda k: len(k) >= 32 and all(c.isalnum() for c in k)),

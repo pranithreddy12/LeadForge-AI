@@ -17,6 +17,7 @@ celery = Celery(
         "app.workers.outreach",
         "app.workers.workflows",
         "app.workers.embeddings",
+        "app.workers.enrichment",
     ],
 )
 
@@ -37,6 +38,7 @@ celery.conf.update(
         "app.workers.scoring.*": {"queue": "scoring"},
         "app.workers.outreach.*": {"queue": "outreach"},
         "app.workers.embeddings.*": {"queue": "embeddings"},
+        "app.workers.enrichment.*": {"queue": "discovery"},
     },
 )
 
@@ -53,5 +55,9 @@ celery.conf.beat_schedule = {
     "embed-new-rows-every-10m": {
         "task": "app.workers.embeddings.embed_pending_rows",
         "schedule": crontab(minute="*/10"),
+    },
+    "enrich-pending-every-15m": {
+        "task": "app.workers.enrichment.enrich_pending",
+        "schedule": crontab(minute="*/15"),
     },
 }

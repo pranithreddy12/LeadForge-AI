@@ -59,7 +59,7 @@ services:
       redis: { condition: service_healthy }
     volumes:
       - ./backend:/app
-    command: celery -A app.core.celery_app.celery worker --loglevel=info --concurrency=4 -Q celery,default,discovery,scoring,outreach,embeddings
+    command: celery -A app.core.celery_app.celery worker --loglevel=info --concurrency=2 -Q celery,default,discovery,scoring,outreach,embeddings
 
   beat:
     build:

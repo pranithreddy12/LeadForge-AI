@@ -142,6 +142,32 @@ export interface DashboardSummary {
   revenue: KPI;
 }
 
+export interface OpportunityCard {
+  company_id: ID;
+  company_name: string;
+  domain?: string | null;
+  industry?: string | null;
+  pipeline_stage: PipelineStage;
+  score: number;
+  grade: "A+" | "A" | "B" | "C" | "D" | "F";
+  probability: number;
+  why_now: string[];
+  pain_points: string[];
+  suggested_contact_title?: string | null;
+  suggested_offer?: string | null;
+  signal_count: number;
+  top_signal_kinds: string[];
+  scored_at?: string | null;
+}
+
+export interface OpportunityStats {
+  total_scored: number;
+  hot: number;
+  warm: number;
+  cold: number;
+  avg_score: number;
+}
+
 export interface Workflow {
   id: ID;
   name: string;

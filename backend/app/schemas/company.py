@@ -56,8 +56,18 @@ class CompanyOut(BaseModel):
     enriched: bool
     source: str | None
     icp_id: uuid.UUID | None
+    funding_total_usd: int | None = None
+    last_funding_stage: str | None = None
     created_at: datetime
     updated_at: datetime
+
+    @classmethod
+    def model_validate(cls, obj, **kwargs):  # type: ignore[override]
+        inst = super().model_validate(obj, **kwargs)
+        funding = (getattr(obj, "raw", None) or {}).get("funding") or {}
+        inst.funding_total_usd = funding.get("funding_total_usd")
+        inst.last_funding_stage = funding.get("last_funding_stage")
+        return inst
 
 
 class CompanyDiscoveryRequest(BaseModel):

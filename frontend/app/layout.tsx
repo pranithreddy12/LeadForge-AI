@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Inter, JetBrains_Mono } from "next/font/google";
 import { ClerkProvider } from "@clerk/nextjs";
 import { Providers } from "@/components/providers";
+import { clerkConfigured } from "@/lib/clerk-config";
 import "./globals.css";
 
 const inter = Inter({ subsets: ["latin"], variable: "--font-sans", display: "swap" });
@@ -12,10 +13,6 @@ export const metadata: Metadata = {
   description:
     "AI-powered lead discovery, validation, and opportunity intelligence for B2B sellers.",
 };
-
-const clerkKey = process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY ?? "";
-const clerkConfigured =
-  clerkKey.startsWith("pk_") && !clerkKey.endsWith("xxx") && !clerkKey.endsWith("placeholder");
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   const tree = (

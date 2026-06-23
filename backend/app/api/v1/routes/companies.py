@@ -13,7 +13,9 @@ from app.models.tenant import Organization
 from app.schemas.common import Page
 from app.schemas.company import CompanyCreate, CompanyDiscoveryRequest, CompanyOut, CompanyUpdate
 from app.services.discovery import discover_via_search, persist_candidates
+from app.services.enrichment import enrich_company
 from app.workers.discovery import discover_companies_task
+from app.workers.enrichment import enrich_batch_task
 
 router = APIRouter(prefix="/companies", tags=["companies"])
 
@@ -122,4 +124,26 @@ def discover(
     task = discover_companies_task.delay(
         str(org.id), str(icp.id), payload.limit, payload.extra_keywords or [],
     )
+    return {"task_id": task.id, "status": "queued"}
+
+
+@router.post("/{company_id}/enrich", response_model=CompanyOut)
+def enrich_one(company_id: uuid.UUID, db: Session = Depends(get_db),
+               org: Organization = Depends(current_org), sync: bool = True):
+    """Enrich a single company. Sync by default so the UI gets fresh fields back."""
+    c = db.get(Company, company_id)
+    if not c or c.organization_id != org.id:
+        raise NotFound("Company")
+    if sync:
+        enrich_company(db, c)
+        db.refresh(c)
+        return c
+    enrich_batch_task.delay(str(org.id), [str(company_id)])
+    return c
+
+
+@router.post("/enrich-batch", status_code=status.HTTP_202_ACCEPTED)
+def enrich_many(db: Session = Depends(get_db), org: Organization = Depends(current_org),
+                limit: int = 25):
+    task = enrich_batch_task.delay(str(org.id), None, limit)
     return {"task_id": task.id, "status": "queued"}
