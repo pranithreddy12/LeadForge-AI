@@ -1,0 +1,76 @@
+- generic [active] [ref=e1]:
+  - generic [ref=e2]:
+    - complementary [ref=e3]:
+      - generic [ref=e4]:
+        - img [ref=e6]
+        - generic [ref=e8]: LeadForge
+        - generic [ref=e9]: AI
+      - navigation [ref=e10]:
+        - link "Dashboard" [ref=e11] [cursor=pointer]:
+          - /url: /dashboard
+          - img [ref=e12]
+          - text: Dashboard
+        - link "AI ICP" [ref=e17] [cursor=pointer]:
+          - /url: /icp
+          - img [ref=e18]
+          - text: AI ICP
+        - link "Opportunities" [ref=e20] [cursor=pointer]:
+          - /url: /opportunities
+          - img [ref=e21]
+          - text: Opportunities
+        - link "Leads" [ref=e23] [cursor=pointer]:
+          - /url: /leads
+          - img [ref=e24]
+          - text: Leads
+        - link "Contacts" [ref=e28] [cursor=pointer]:
+          - /url: /contacts
+          - img [ref=e29]
+          - text: Contacts
+        - link "Signals" [ref=e34] [cursor=pointer]:
+          - /url: /signals
+          - img [ref=e35]
+          - text: Signals
+        - link "CRM" [ref=e37] [cursor=pointer]:
+          - /url: /crm
+          - img [ref=e38]
+          - text: CRM
+        - link "Campaigns" [ref=e42] [cursor=pointer]:
+          - /url: /campaigns
+          - img [ref=e43]
+          - text: Campaigns
+        - link "Workflows" [ref=e46] [cursor=pointer]:
+          - /url: /workflows
+          - img [ref=e47]
+          - text: Workflows
+        - link "Ask AI" [ref=e51] [cursor=pointer]:
+          - /url: /chat
+          - img [ref=e52]
+          - text: Ask AI
+      - generic [ref=e54]:
+        - link "Billing" [ref=e55] [cursor=pointer]:
+          - /url: /billing
+          - img [ref=e56]
+          - text: Billing
+        - link "Settings" [ref=e58] [cursor=pointer]:
+          - /url: /settings
+          - img [ref=e59]
+          - text: Settings
+    - generic [ref=e62]:
+      - banner [ref=e63]:
+        - generic [ref=e64]:
+          - img [ref=e65]
+          - textbox "Search companies, contacts, signals…" [ref=e68]
+          - generic [ref=e69]:
+            - img [ref=e70]
+            - text: K
+        - button "Ask AI" [ref=e72] [cursor=pointer]:
+          - img [ref=e73]
+          - text: Ask AI
+        - generic [ref=e75]:
+          - generic [ref=e76]: Demo mode
+          - generic [ref=e77]:
+            - generic [ref=e78]: DF
+            - generic [ref=e79]: Demo Founder
+      - main [ref=e80]:
+        - generic [ref=e81]: Loading…
+  - region "Notifications alt+T"

@@ -29,6 +29,12 @@ def draft_outreach_for_company(organization_id: str, company_id: str,
         company = db.get(Company, uuid.UUID(company_id))
         if not company or str(company.organization_id) != organization_id:
             return {"error": "company_not_found"}
+        # Suppression guardrail — never draft for an already-contacted or held company.
+        from app.services.email_sender import suppression_reason
+        reason = suppression_reason(db, company)
+        if reason:
+            log.info("outreach_suppressed", company=str(company.id), reason=reason)
+            return {"created": 0, "suppressed": reason}
         contact = db.execute(
             select(Contact).where(Contact.company_id == company.id, Contact.is_primary.is_(True))
         ).scalar_one_or_none() or db.execute(

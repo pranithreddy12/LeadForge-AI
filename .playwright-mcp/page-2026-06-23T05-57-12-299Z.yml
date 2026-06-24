@@ -1,0 +1,141 @@
+- generic [active] [ref=e1]:
+  - generic [ref=e2]:
+    - complementary [ref=e3]:
+      - generic [ref=e4]:
+        - img [ref=e6]
+        - generic [ref=e8]: LeadForge
+        - generic [ref=e9]: AI
+      - navigation [ref=e10]:
+        - link "Dashboard" [ref=e11] [cursor=pointer]:
+          - /url: /dashboard
+          - img [ref=e12]
+          - text: Dashboard
+        - link "AI ICP" [ref=e17] [cursor=pointer]:
+          - /url: /icp
+          - img [ref=e18]
+          - text: AI ICP
+        - link "Leads" [ref=e20] [cursor=pointer]:
+          - /url: /leads
+          - img [ref=e21]
+          - text: Leads
+        - link "Contacts" [ref=e25] [cursor=pointer]:
+          - /url: /contacts
+          - img [ref=e26]
+          - text: Contacts
+        - link "Signals" [ref=e31] [cursor=pointer]:
+          - /url: /signals
+          - img [ref=e32]
+          - text: Signals
+        - link "CRM" [ref=e34] [cursor=pointer]:
+          - /url: /crm
+          - img [ref=e35]
+          - text: CRM
+        - link "Campaigns" [ref=e39] [cursor=pointer]:
+          - /url: /campaigns
+          - img [ref=e40]
+          - text: Campaigns
+        - link "Workflows" [ref=e43] [cursor=pointer]:
+          - /url: /workflows
+          - img [ref=e44]
+          - text: Workflows
+        - link "Ask AI" [ref=e48] [cursor=pointer]:
+          - /url: /chat
+          - img [ref=e49]
+          - text: Ask AI
+      - generic [ref=e51]:
+        - link "Billing" [ref=e52] [cursor=pointer]:
+          - /url: /billing
+          - img [ref=e53]
+          - text: Billing
+        - link "Settings" [ref=e55] [cursor=pointer]:
+          - /url: /settings
+          - img [ref=e56]
+          - text: Settings
+    - generic [ref=e59]:
+      - banner [ref=e60]:
+        - generic [ref=e61]:
+          - img [ref=e62]
+          - textbox "Search companies, contacts, signals…" [ref=e65]
+          - generic [ref=e66]:
+            - img [ref=e67]
+            - text: K
+        - button "Ask AI" [ref=e69] [cursor=pointer]:
+          - img [ref=e70]
+          - text: Ask AI
+        - generic [ref=e72]:
+          - generic [ref=e73]: Demo mode
+          - generic [ref=e74]:
+            - generic [ref=e75]: DF
+            - generic [ref=e76]: Demo Founder
+      - main [ref=e77]:
+        - generic [ref=e78]:
+          - generic [ref=e79]:
+            - heading "Dashboard" [level=1] [ref=e80]
+            - paragraph [ref=e81]: What's happening across your pipeline this week.
+          - generic [ref=e82]:
+            - generic [ref=e109]:
+              - generic [ref=e110]: Leads found (7d)
+              - generic [ref=e111]:
+                - generic [ref=e112]: "14"
+                - generic [ref=e113]:
+                  - img [ref=e114]
+                  - text: 1300.0%
+            - generic [ref=e117]:
+              - generic [ref=e118]: Qualified leads
+              - generic [ref=e120]: "1"
+            - generic [ref=e121]:
+              - generic [ref=e122]: Avg lead score
+              - generic [ref=e124]: "58.0"
+            - generic [ref=e125]:
+              - generic [ref=e126]: Conversion rate
+              - generic [ref=e128]: 0.0%
+            - generic [ref=e129]:
+              - generic [ref=e130]: Pipeline (est)
+              - generic [ref=e132]: $0
+          - generic [ref=e93]:
+            - generic [ref=e94]:
+              - heading "Lead score trend (30d)" [level=3] [ref=e96]
+              - img [ref=e135]:
+                - generic [ref=e140]:
+                  - generic [ref=e142]: 2026-06-22
+                  - generic [ref=e144]: 2026-06-23
+                - generic [ref=e146]:
+                  - generic [ref=e148]: "0"
+                  - generic [ref=e150]: "25"
+                  - generic [ref=e152]: "50"
+                  - generic [ref=e154]: "75"
+                  - generic [ref=e156]: "100"
+            - generic [ref=e99]:
+              - heading "Top industries" [level=3] [ref=e101]
+              - img [ref=e165]:
+                - generic [ref=e167]:
+                  - generic [ref=e169]: "0"
+                  - generic [ref=e171]: "3"
+                  - generic [ref=e173]: "6"
+                  - generic [ref=e175]: "9"
+                  - generic [ref=e177]: "12"
+                - generic [ref=e179]:
+                  - generic [ref=e181]: Unknown
+                  - generic [ref=e183]: SaaS
+          - generic [ref=e104]:
+            - heading "Source breakdown" [level=3] [ref=e106]
+            - img [ref=e193]:
+              - generic [ref=e195]:
+                - generic [ref=e197]: "0"
+                - generic [ref=e199]: "3"
+                - generic [ref=e201]: "6"
+                - generic [ref=e203]: "9"
+                - generic [ref=e205]: "12"
+              - generic [ref=e207]:
+                - generic [ref=e209]: seed
+                - generic [ref=e211]: tavily
+  - region "Notifications alt+T"
+  - status [ref=e219]:
+    - generic [ref=e220]:
+      - img [ref=e222]
+      - generic [ref=e224]:
+        - text: Static route
+        - button "Hide static indicator" [ref=e225] [cursor=pointer]:
+          - img [ref=e226]
+  - alert [ref=e229]
+  - generic [ref=e230]: seed

@@ -1,0 +1,137 @@
+- generic [active] [ref=e1]:
+  - generic [ref=e2]:
+    - complementary [ref=e3]:
+      - generic [ref=e4]:
+        - img [ref=e6]
+        - generic [ref=e8]: LeadForge
+        - generic [ref=e9]: AI
+      - navigation [ref=e10]:
+        - link "Dashboard" [ref=e11] [cursor=pointer]:
+          - /url: /dashboard
+          - img [ref=e12]
+          - text: Dashboard
+        - link "AI ICP" [ref=e17] [cursor=pointer]:
+          - /url: /icp
+          - img [ref=e18]
+          - text: AI ICP
+        - link "Opportunities" [ref=e20] [cursor=pointer]:
+          - /url: /opportunities
+          - img [ref=e21]
+          - text: Opportunities
+        - link "Leads" [ref=e23] [cursor=pointer]:
+          - /url: /leads
+          - img [ref=e24]
+          - text: Leads
+        - link "Contacts" [ref=e28] [cursor=pointer]:
+          - /url: /contacts
+          - img [ref=e29]
+          - text: Contacts
+        - link "Signals" [ref=e34] [cursor=pointer]:
+          - /url: /signals
+          - img [ref=e35]
+          - text: Signals
+        - link "CRM" [ref=e37] [cursor=pointer]:
+          - /url: /crm
+          - img [ref=e38]
+          - text: CRM
+        - link "Campaigns" [ref=e42] [cursor=pointer]:
+          - /url: /campaigns
+          - img [ref=e43]
+          - text: Campaigns
+        - link "Workflows" [ref=e46] [cursor=pointer]:
+          - /url: /workflows
+          - img [ref=e47]
+          - text: Workflows
+        - link "Ask AI" [ref=e51] [cursor=pointer]:
+          - /url: /chat
+          - img [ref=e52]
+          - text: Ask AI
+      - generic [ref=e54]:
+        - link "Billing" [ref=e55] [cursor=pointer]:
+          - /url: /billing
+          - img [ref=e56]
+          - text: Billing
+        - link "Settings" [ref=e58] [cursor=pointer]:
+          - /url: /settings
+          - img [ref=e59]
+          - text: Settings
+    - generic [ref=e62]:
+      - banner [ref=e63]:
+        - generic [ref=e64]:
+          - img [ref=e65]
+          - textbox "Search companies, contacts, signals…" [ref=e68]
+          - generic [ref=e69]:
+            - img [ref=e70]
+            - text: K
+        - button "Ask AI" [ref=e72] [cursor=pointer]:
+          - img [ref=e73]
+          - text: Ask AI
+        - generic [ref=e75]:
+          - generic [ref=e76]: Demo mode
+          - generic [ref=e77]:
+            - generic [ref=e78]: DF
+            - generic [ref=e79]: Demo Founder
+      - main [ref=e80]:
+        - generic [ref=e81]:
+          - generic [ref=e82]:
+            - heading "Contacts" [level=1] [ref=e83]
+            - paragraph [ref=e84]: Decision makers across all your accounts.
+          - generic [ref=e86]:
+            - img [ref=e87]
+            - textbox "Search by name, title, email…" [ref=e90]
+          - generic [ref=e91]:
+            - heading "5 contacts" [level=3] [ref=e107]
+            - table [ref=e95]:
+              - rowgroup [ref=e96]:
+                - row "Name Title Seniority Email Status LinkedIn" [ref=e97]:
+                  - columnheader "Name" [ref=e98]
+                  - columnheader "Title" [ref=e99]
+                  - columnheader "Seniority" [ref=e100]
+                  - columnheader "Email" [ref=e101]
+                  - columnheader "Status" [ref=e102]
+                  - columnheader "LinkedIn" [ref=e103]
+              - rowgroup [ref=e104]:
+                - row "Sarah Chen Chief Financial Officer cxo sarah@innovatefinance.com" [ref=e108]:
+                  - cell "Sarah Chen" [ref=e109]
+                  - cell "Chief Financial Officer" [ref=e110]
+                  - cell "cxo" [ref=e111]
+                  - cell "sarah@innovatefinance.com" [ref=e112]
+                  - cell [ref=e113]
+                  - cell [ref=e114]
+                - row "Mark Davis VP of Finance vp mark@innovatefinance.com" [ref=e115]:
+                  - cell "Mark Davis" [ref=e116]
+                  - cell "VP of Finance" [ref=e117]
+                  - cell "vp" [ref=e118]
+                  - cell "mark@innovatefinance.com" [ref=e119]
+                  - cell [ref=e120]
+                  - cell [ref=e121]
+                - row "Priya Raman Finance Manager manager —" [ref=e122]:
+                  - cell "Priya Raman" [ref=e123]
+                  - cell "Finance Manager" [ref=e124]
+                  - cell "manager" [ref=e125]
+                  - cell "—" [ref=e126]
+                  - cell [ref=e127]
+                  - cell [ref=e128]
+                - row "Alex Kim Procurement Lead manager —" [ref=e129]:
+                  - cell "Alex Kim" [ref=e130]
+                  - cell "Procurement Lead" [ref=e131]
+                  - cell "manager" [ref=e132]
+                  - cell "—" [ref=e133]
+                  - cell [ref=e134]
+                  - cell [ref=e135]
+                - row "Tom Lee Financial Analyst ic —" [ref=e136]:
+                  - cell "Tom Lee" [ref=e137]
+                  - cell "Financial Analyst" [ref=e138]
+                  - cell "ic" [ref=e139]
+                  - cell "—" [ref=e140]
+                  - cell [ref=e141]
+                  - cell [ref=e142]
+  - region "Notifications alt+T"
+  - status [ref=e143]:
+    - generic [ref=e144]:
+      - img [ref=e146]
+      - generic [ref=e148]:
+        - text: Static route
+        - button "Hide static indicator" [ref=e149] [cursor=pointer]:
+          - img [ref=e150]
+  - alert [ref=e153]

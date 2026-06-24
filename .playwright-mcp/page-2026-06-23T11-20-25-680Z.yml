@@ -1,0 +1,121 @@
+- generic [active] [ref=e1]:
+  - generic [ref=e2]:
+    - complementary [ref=e3]:
+      - generic [ref=e4]:
+        - img [ref=e6]
+        - generic [ref=e8]: LeadForge
+        - generic [ref=e9]: AI
+      - navigation [ref=e10]:
+        - link "Dashboard" [ref=e11] [cursor=pointer]:
+          - /url: /dashboard
+          - img [ref=e12]
+          - text: Dashboard
+        - link "AI ICP" [ref=e17] [cursor=pointer]:
+          - /url: /icp
+          - img [ref=e18]
+          - text: AI ICP
+        - link "Opportunities" [ref=e20] [cursor=pointer]:
+          - /url: /opportunities
+          - img [ref=e21]
+          - text: Opportunities
+        - link "Leads" [ref=e23] [cursor=pointer]:
+          - /url: /leads
+          - img [ref=e24]
+          - text: Leads
+        - link "Contacts" [ref=e28] [cursor=pointer]:
+          - /url: /contacts
+          - img [ref=e29]
+          - text: Contacts
+        - link "Signals" [ref=e34] [cursor=pointer]:
+          - /url: /signals
+          - img [ref=e35]
+          - text: Signals
+        - link "CRM" [ref=e37] [cursor=pointer]:
+          - /url: /crm
+          - img [ref=e38]
+          - text: CRM
+        - link "Campaigns" [ref=e42] [cursor=pointer]:
+          - /url: /campaigns
+          - img [ref=e43]
+          - text: Campaigns
+        - link "Workflows" [ref=e46] [cursor=pointer]:
+          - /url: /workflows
+          - img [ref=e47]
+          - text: Workflows
+        - link "Ask AI" [ref=e51] [cursor=pointer]:
+          - /url: /chat
+          - img [ref=e52]
+          - text: Ask AI
+      - generic [ref=e54]:
+        - link "Billing" [ref=e55] [cursor=pointer]:
+          - /url: /billing
+          - img [ref=e56]
+          - text: Billing
+        - link "Settings" [ref=e58] [cursor=pointer]:
+          - /url: /settings
+          - img [ref=e59]
+          - text: Settings
+    - generic [ref=e62]:
+      - banner [ref=e63]:
+        - generic [ref=e64]:
+          - img [ref=e65]
+          - textbox "Search companies, contacts, signals…" [ref=e68]
+          - generic [ref=e69]:
+            - img [ref=e70]
+            - text: K
+        - button "Ask AI" [ref=e72] [cursor=pointer]:
+          - img [ref=e73]
+          - text: Ask AI
+        - generic [ref=e75]:
+          - generic [ref=e76]: Demo mode
+          - generic [ref=e77]:
+            - generic [ref=e78]: DF
+            - generic [ref=e79]: Demo Founder
+      - main [ref=e80]:
+        - generic [ref=e81]:
+          - generic [ref=e82]:
+            - heading "Dashboard" [level=1] [ref=e83]
+            - paragraph [ref=e84]: What's happening across your pipeline this week.
+          - generic [ref=e96]:
+            - generic [ref=e97]:
+              - generic [ref=e98]:
+                - heading "Hot opportunities" [level=3] [ref=e99]:
+                  - img [ref=e100]
+                  - text: Hot opportunities
+                - link "All" [ref=e102] [cursor=pointer]:
+                  - /url: /opportunities
+                  - text: All
+                  - img [ref=e103]
+              - generic [ref=e107]: No scored accounts yet.
+            - generic [ref=e108]:
+              - heading "Lead score distribution" [level=3] [ref=e110]:
+                - img [ref=e111]
+                - text: Lead score distribution
+              - generic [ref=e114]: Score some leads to see the spread.
+            - generic [ref=e115]:
+              - heading "Buying signals (72h)" [level=3] [ref=e117]:
+                - img [ref=e118]
+                - text: Buying signals (72h)
+              - generic [ref=e121]: No recent signals — run signal detection.
+          - generic [ref=e122]:
+            - generic [ref=e123]:
+              - heading "Funding events" [level=3] [ref=e125]:
+                - img [ref=e126]
+                - text: Funding events
+              - generic [ref=e130]: No funding signals detected yet.
+            - generic [ref=e131]:
+              - heading "New executive hires" [level=3] [ref=e133]:
+                - img [ref=e134]
+                - text: New executive hires
+              - generic [ref=e138]: No leadership-change signals yet.
+          - generic [ref=e139]:
+            - generic [ref=e140]:
+              - heading "Lead score trend (30d)" [level=3] [ref=e142]
+              - generic [ref=e144]: No scored leads yet.
+            - generic [ref=e145]:
+              - heading "Top industries" [level=3] [ref=e147]
+              - generic [ref=e149]: No industry data yet.
+          - generic [ref=e150]:
+            - heading "Source breakdown" [level=3] [ref=e152]
+            - generic [ref=e154]: No sources yet — discover your first leads.
+  - region "Notifications alt+T"

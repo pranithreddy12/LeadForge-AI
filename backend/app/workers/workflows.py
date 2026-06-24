@@ -64,8 +64,12 @@ def _step_discover(db, org_id: uuid.UUID, ctx: dict, config: dict) -> dict:
     limit = int(config.get("limit", 25))
     cands = discover_via_search(icp, limit=limit, extra_keywords=config.get("keywords"))
     rows = persist_candidates(db, organization_id=org_id, icp=icp, candidates=cands)
-    company_ids = ctx.get("company_ids", []) + [str(r.id) for r in rows]
-    return {"company_ids": company_ids, "delta": len(rows)}
+    # Held-unknown rows are persisted (retry-able, suppressible) but kept OUT of the
+    # scoring/outreach pipeline until confirmed as buyers.
+    buyer_rows = [r for r in rows if r.classification_status is None]
+    held = len(rows) - len(buyer_rows)
+    company_ids = ctx.get("company_ids", []) + [str(r.id) for r in buyer_rows]
+    return {"company_ids": company_ids, "delta": len(buyer_rows), "held_unknown": held}
 
 
 def _step_enrich(db, org_id: uuid.UUID, ctx: dict, _config: dict) -> dict:
@@ -153,9 +157,10 @@ def _step_outreach(db, org_id: uuid.UUID, ctx: dict, config: dict) -> dict:
 
 
 def _step_send_emails(db, org_id: uuid.UUID, ctx: dict, config: dict) -> dict:
-    """Send the draft emails for this workflow's companies via Gmail."""
+    """Send the draft emails for this workflow's companies via Gmail, within caps."""
+    from app.core.config import settings
     from app.models.campaign import EmailMessage
-    from app.services.email_sender import send_email_message
+    from app.services.email_sender import daily_cap_remaining, send_email_message
     company_ids = [uuid.UUID(c) for c in ctx.get("company_ids", [])]
     if not company_ids:
         return {"sent": 0}
@@ -167,11 +172,19 @@ def _step_send_emails(db, org_id: uuid.UUID, ctx: dict, config: dict) -> dict:
             EmailMessage.channel == "email",
         )
     ).scalars().all()
-    sent = 0
+
+    # Caps enforced BEFORE any send attempt: per-run cap and the org's daily cap.
+    per_run = int(config.get("max_per_run") or settings.max_emails_per_run)
+    budget = min(per_run, daily_cap_remaining(db, org_id))
+    sent = capped = 0
     for m in drafts:
+        if sent >= budget:
+            capped += 1
+            continue
         if send_email_message(db, m).get("sent"):
             sent += 1
-    return {"sent": sent, "drafts": len(drafts)}
+    return {"sent": sent, "drafts": len(drafts), "skipped_by_cap": capped,
+            "per_run_cap": per_run, "daily_cap": settings.max_emails_per_day}
 
 
 def _step_notify_telegram(db, org_id: uuid.UUID, ctx: dict, config: dict) -> dict:

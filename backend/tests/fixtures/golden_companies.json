@@ -1,0 +1,282 @@
+{
+  "_meta": {
+    "icp": "AI Automation Agency - Mid-Market B2B Buyers (50-1000 emp)",
+    "seller_offering": "Done-for-you AI automation agency: voice agents, chatbots, RAG, AEO, speed-to-lead.",
+    "buyer_rule": "A buyer CONSUMES automation. A vendor/competitor SELLS automation, RevOps, or AI-workflow products. A SaaS selling something else (compliance, planning, content, banking) is a buyer.",
+    "labels": ["buyer", "competitor", "vendor", "investor_vc", "job_board_or_directory", "listicle_or_content", "too_large", "unknown"],
+    "scoring_assertion": "expected_grade_band is non-null ONLY for buyer and too_large. Reject classes (vendor/competitor/investor_vc/job_board_or_directory/listicle_or_content) are the gate's responsibility, asserted by eval_qualification, not scoring.",
+    "grade_band_syntax": "Range string like 'A-B', 'C-D', 'D-F', or single 'F'. null = scoring not asserted for this row."
+  },
+  "companies": [
+    {
+      "name": "Synctera", "domain": "synctera.com", "url": "https://synctera.com",
+      "title": "Synctera - Banking as a Service Platform for Fintechs",
+      "snippet": "Synctera helps companies launch and scale fintech products with sponsor banks, compliance, and ledger infrastructure.",
+      "expected_label": "buyer", "expected_grade_band": "A-B",
+      "firmographics": {"employee_count": 100, "industry": "Financial Services", "country": "United States",
+        "signals": [{"kind": "funding", "severity": 0.8, "confidence": 0.85}, {"kind": "hiring", "severity": 0.6, "confidence": 0.7}]},
+      "notes": "Sells BaaS infrastructure, not automation. Proven A in live pipeline."
+    },
+    {
+      "name": "Vanta", "domain": "vanta.com", "url": "https://vanta.com",
+      "title": "Vanta - Automated Security and Compliance",
+      "snippet": "Vanta helps companies achieve and maintain SOC 2, ISO 27001, and HIPAA compliance. Ops-heavy mid-market SaaS.",
+      "expected_label": "buyer", "expected_grade_band": "A-B",
+      "firmographics": {"employee_count": 700, "industry": "Software as a Service (SaaS)", "country": "United States",
+        "signals": [{"kind": "funding", "severity": 0.7, "confidence": 0.8}, {"kind": "hiring", "severity": 0.7, "confidence": 0.75}]},
+      "notes": "Sells compliance, NOT automation -> buyer. 'Automated compliance' wording is a trap; core product is compliance."
+    },
+    {
+      "name": "Pigment", "domain": "pigment.com", "url": "https://pigment.com",
+      "title": "Pigment - Business Planning Platform",
+      "snippet": "Pigment is a business planning and forecasting platform for finance, sales, and HR teams scaling operations.",
+      "expected_label": "buyer", "expected_grade_band": "A-B",
+      "firmographics": {"employee_count": 500, "industry": "Software as a Service (SaaS)", "country": "United States",
+        "signals": [{"kind": "funding", "severity": 0.8, "confidence": 0.8}, {"kind": "hiring", "severity": 0.6, "confidence": 0.7}]},
+      "notes": "Sells planning, not automation -> buyer."
+    },
+    {
+      "name": "Liquid Death", "domain": "liquiddeath.com", "url": "https://liquiddeath.com",
+      "title": "Liquid Death - Canned Water Beverage Brand",
+      "snippet": "Liquid Death is a fast-growing DTC beverage brand selling canned water and iced tea, scaling retail and ecommerce ops.",
+      "expected_label": "buyer", "expected_grade_band": "A-B",
+      "firmographics": {"employee_count": 200, "industry": "E-commerce", "country": "United States",
+        "signals": [{"kind": "funding", "severity": 0.8, "confidence": 0.85}, {"kind": "growth", "severity": 0.8, "confidence": 0.8}]},
+      "notes": "Clean operating-company buyer. DTC brand, obviously consumes (does not sell) automation."
+    },
+    {
+      "name": "Tend", "domain": "hellotend.com", "url": "https://hellotend.com",
+      "title": "Tend - Modern Dental Care, Multiple Locations",
+      "snippet": "Tend operates dental studios across several US cities, handling patient intake, scheduling, and billing across locations.",
+      "expected_label": "buyer", "expected_grade_band": "A-B",
+      "firmographics": {"employee_count": 500, "industry": "Healthcare Technology", "country": "United States",
+        "signals": [{"kind": "office_expansion", "severity": 0.7, "confidence": 0.75}, {"kind": "hiring", "severity": 0.7, "confidence": 0.7}]},
+      "notes": "Multi-site healthcare PROVIDER (operates clinics), not a health-tech vendor. Consumes automation for intake/scheduling."
+    },
+    {
+      "name": "Newfront", "domain": "newfront.com", "url": "https://newfront.com",
+      "title": "Newfront - Commercial Insurance Brokerage",
+      "snippet": "Newfront is a commercial insurance brokerage providing business insurance, benefits, and risk management to companies.",
+      "expected_label": "buyer", "expected_grade_band": "A-B",
+      "firmographics": {"employee_count": 700, "industry": "Financial Services", "country": "United States",
+        "signals": [{"kind": "hiring", "severity": 0.6, "confidence": 0.7}, {"kind": "growth", "severity": 0.6, "confidence": 0.7}]},
+      "notes": "Brokerage SELLS insurance, not automation -> buyer. Heavy manual quoting/back-office = automation-hungry."
+    },
+    {
+      "name": "Mercury", "domain": "mercury.com", "url": "https://mercury.com",
+      "title": "Mercury - Banking for Startups",
+      "snippet": "Mercury provides banking and financial services tailored for startups and tech companies.",
+      "expected_label": "buyer", "expected_grade_band": "B-C",
+      "firmographics": {"employee_count": 1000, "industry": "Financial Services", "country": "United States",
+        "signals": [{"kind": "funding", "severity": 0.9, "confidence": 0.9}, {"kind": "growth", "severity": 0.7, "confidence": 0.75}]},
+      "notes": "Deliberate cap-EDGE case at ~1000. Verify headcount; if >1000 it flips to too_large."
+    },
+    {
+      "name": "Stellar", "domain": "getstellar.ai", "url": "https://getstellar.ai",
+      "title": "Stellar - Customer Engagement Software",
+      "snippet": "Stellar offers customer engagement and retention software for consumer brands.",
+      "expected_label": "buyer", "expected_grade_band": "B-C",
+      "firmographics": {"employee_count": 103, "industry": "Software as a Service (SaaS)", "country": "United States",
+        "signals": [{"kind": "hiring", "severity": 0.5, "confidence": 0.6}]},
+      "notes": "In-band SaaS buyer, weaker signals -> B/C."
+    },
+    {
+      "name": "Jasper", "domain": "jasper.ai", "url": "https://jasper.ai",
+      "title": "Jasper - AI Content Platform for Marketing Teams",
+      "snippet": "Jasper helps marketing teams create on-brand content with AI. Mid-market marketing SaaS.",
+      "expected_label": "buyer", "expected_grade_band": "B-C",
+      "firmographics": {"employee_count": 300, "industry": "Marketing & Advertising", "country": "United States",
+        "signals": [{"kind": "funding", "severity": 0.7, "confidence": 0.75}]},
+      "notes": "AI-adjacent but sells CONTENT generation, not workflow automation -> softer buyer (B/C)."
+    },
+    {
+      "name": "OroCommerce", "domain": "oroinc.com", "url": "https://oroinc.com",
+      "title": "OroCommerce - B2B eCommerce Platform",
+      "snippet": "OroCommerce is a B2B ecommerce platform for manufacturers, distributors, and wholesalers.",
+      "expected_label": "buyer", "expected_grade_band": "B-C",
+      "firmographics": {"employee_count": 121, "industry": "E-commerce", "country": "United States",
+        "signals": [{"kind": "funding", "severity": 0.5, "confidence": 0.6}, {"kind": "leadership_change", "severity": 0.6, "confidence": 0.7}]},
+      "notes": "Borderline buyer flagged live. In-band, real CRO-hire signal, weak automation-stack match -> B/C."
+    },
+
+    {
+      "name": "Automattic", "domain": "automattic.com", "url": "https://automattic.com",
+      "title": "Automattic - The Company Behind WordPress.com",
+      "snippet": "Automattic makes WordPress.com, WooCommerce, Tumblr, and Jetpack. $700M+ ARR software company.",
+      "expected_label": "too_large", "expected_grade_band": "C-D",
+      "firmographics": {"employee_count": 1479, "industry": "Software development", "country": "United States",
+        "signals": [{"kind": "funding", "severity": 0.8, "confidence": 0.8}, {"kind": "hiring", "severity": 0.7, "confidence": 0.7}]},
+      "notes": "Just over the 1000 cap -> MILD size penalty -> C/D. Tests the graduated curve at the low end."
+    },
+    {
+      "name": "UiPath", "domain": "uipath.com", "url": "https://uipath.com",
+      "title": "UiPath - Enterprise Automation and RPA Platform",
+      "snippet": "UiPath is an enterprise robotic process automation and AI platform used by large organizations worldwide.",
+      "expected_label": "too_large", "expected_grade_band": "D-F",
+      "firmographics": {"employee_count": 4000, "industry": "Software as a Service (SaaS)", "country": "United States",
+        "signals": [{"kind": "funding", "severity": 0.7, "confidence": 0.7}]},
+      "notes": "RPA vendor BUT caught primarily by SIZE (~4000). Tests mid-range size penalty. (Vendor-by-product is also true; size dominates.)"
+    },
+    {
+      "name": "Stripe", "domain": "stripe.com", "url": "https://stripe.com",
+      "title": "Stripe - Payments Infrastructure for the Internet",
+      "snippet": "Stripe is a global payments and financial infrastructure platform serving millions of businesses.",
+      "expected_label": "too_large", "expected_grade_band": "D-F",
+      "firmographics": {"employee_count": 8000, "industry": "Financial Services", "country": "United States",
+        "signals": [{"kind": "funding", "severity": 0.9, "confidence": 0.9}, {"kind": "growth", "severity": 0.8, "confidence": 0.8}]},
+      "notes": "Giant fintech (~8000). Graded band is informational; reject-class ASSERTION is the principled guard: score < B AND < the lowest buyer score (size penalty keeps it rejected even with strong signals)."
+    },
+    {
+      "name": "Rockwell Automation", "domain": "rockwellautomation.com", "url": "https://rockwellautomation.com",
+      "title": "Rockwell Automation - Industrial Automation and Digital Transformation",
+      "snippet": "Rockwell Automation is a global industrial automation and information company with ~27,000 employees.",
+      "expected_label": "too_large", "expected_grade_band": "F",
+      "firmographics": {"employee_count": 27000, "industry": "Manufacturing", "country": "United States",
+        "signals": [{"kind": "hiring", "severity": 0.6, "confidence": 0.6}]},
+      "notes": "Canonical failure: 27x over cap. Graded band informational; reject-class ASSERTION is score < B AND < lowest buyer. Industry 'Manufacturing' is in-ICP so industry bonus is present -> tests that size penalty overrides it."
+    },
+
+    {
+      "name": "Notable", "domain": "notablehealth.com", "url": "https://notablehealth.com",
+      "title": "Notable - Healthcare Workflow Automation Platform",
+      "snippet": "Notable automates healthcare administrative workflows with AI for health systems: intake, scheduling, billing.",
+      "expected_label": "vendor", "expected_grade_band": null,
+      "firmographics": {"employee_count": 100, "industry": "Healthcare Technology", "country": "United States",
+        "signals": [{"kind": "funding", "severity": 0.8, "confidence": 0.85}]},
+      "notes": "SELLS healthcare workflow automation -> vendor, NOT buyer. In-band -> size can't catch it; GATE must. Was wrongly an A anchor."
+    },
+    {
+      "name": "Clari", "domain": "clari.com", "url": "https://clari.com",
+      "title": "Clari - Revenue Operations and RevOps Platform",
+      "snippet": "Clari is a revenue operations platform automating forecasting, pipeline, and revenue workflows for sales teams.",
+      "expected_label": "vendor", "expected_grade_band": null,
+      "firmographics": {"employee_count": 600, "industry": "Software as a Service (SaaS)", "country": "United States",
+        "signals": [{"kind": "funding", "severity": 0.8, "confidence": 0.8}]},
+      "notes": "SELLS RevOps/revenue-workflow automation -> vendor. In-band (~600) -> pure GATE test."
+    },
+    {
+      "name": "Zapier", "domain": "zapier.com", "url": "https://zapier.com",
+      "title": "Zapier - Automation for Busy People",
+      "snippet": "Zapier connects your apps and automates workflows without code. Thousands of integrations.",
+      "expected_label": "vendor", "expected_grade_band": null,
+      "firmographics": {"employee_count": 800, "industry": "Software as a Service (SaaS)", "country": "United States",
+        "signals": [{"kind": "growth", "severity": 0.7, "confidence": 0.7}]},
+      "notes": "Automation PLATFORM vendor, in-band (~800). Firmographically a perfect 'buyer' -> the key in-band gate trap."
+    },
+    {
+      "name": "Make", "domain": "make.com", "url": "https://make.com",
+      "title": "Make - Visual Automation Platform (formerly Integromat)",
+      "snippet": "Make lets you design, build, and automate workflows and integrations visually without code.",
+      "expected_label": "vendor", "expected_grade_band": null,
+      "firmographics": {"employee_count": 300, "industry": "Software as a Service (SaaS)", "country": "Czechia",
+        "signals": [{"kind": "growth", "severity": 0.7, "confidence": 0.7}]},
+      "notes": "Automation platform vendor, in-band (~300). GATE must catch."
+    },
+    {
+      "name": "Trust Automation", "domain": "trustautomation.com", "url": "https://trustautomation.com",
+      "title": "Trust Automation - Motion Control and Automation Systems",
+      "snippet": "Trust Automation designs and builds motion control and automation systems for defense, medical, and industrial uses.",
+      "expected_label": "vendor", "expected_grade_band": null,
+      "firmographics": {"employee_count": 150, "industry": "Manufacturing", "country": "United States",
+        "signals": [{"kind": "hiring", "severity": 0.5, "confidence": 0.6}]},
+      "notes": "Industrial automation MAKER, in-band (~150) -> SLIPPED TO A live. Size can't catch; GATE must via what-they-do."
+    },
+
+    {
+      "name": "VoltixIO", "domain": "voltixio.com", "url": "https://voltixio.com",
+      "title": "VoltixIO - Done-For-You AI Automation Agency",
+      "snippet": "VoltixIO builds AI voice agents that book appointments, qualify leads, and handle calls 24/7. DFY setup from $3,000.",
+      "expected_label": "competitor", "expected_grade_band": null,
+      "firmographics": {"employee_count": 30, "industry": "Professional Services", "country": "United States",
+        "signals": [{"kind": "hiring", "severity": 0.4, "confidence": 0.5}]},
+      "notes": "DIRECT competitor: DFY AI automation agency selling voice agents + speed-to-lead. ~30 emp = identical firmographics to a small buyer -> hardest class; classifier must reason about what they DO."
+    },
+    {
+      "name": "JOROPI", "domain": "joropi-agency.pro", "url": "https://joropi-agency.pro",
+      "title": "JOROPI - AI Voice Agents & Automation for Service Businesses",
+      "snippet": "JOROPI builds AI systems that respond to leads in under 30 seconds, qualify prospects, and book appointments.",
+      "expected_label": "competitor", "expected_grade_band": null,
+      "firmographics": {"employee_count": 20, "industry": "Professional Services", "country": "United States",
+        "signals": []},
+      "notes": "DIRECT competitor: DFY agency, speed-to-lead + appointment booking. Pure what-they-do gate test."
+    },
+
+    {
+      "name": "LvlUp Ventures", "domain": "lvlup.vc", "url": "https://lvlup.vc",
+      "title": "LvlUp Ventures - Early-Stage Venture Capital Firm",
+      "snippet": "LvlUp Ventures invests in early-stage B2B SaaS, e-commerce, and CPG startups across multiple niche funds.",
+      "expected_label": "investor_vc", "expected_grade_band": null,
+      "firmographics": {"employee_count": 30, "industry": "Venture Capital", "country": "United States",
+        "signals": [{"kind": "funding", "severity": 0.6, "confidence": 0.6}]},
+      "notes": "VC firm -> not a buyer. Live false positive. Emp corrected to ~30 (576 was a bad scrape; VCs are tiny)."
+    },
+    {
+      "name": "Andreessen Horowitz", "domain": "a16z.com", "url": "https://a16z.com",
+      "title": "Andreessen Horowitz (a16z) - Venture Capital",
+      "snippet": "a16z is a venture capital firm backing bold entrepreneurs building the future through technology.",
+      "expected_label": "investor_vc", "expected_grade_band": null,
+      "firmographics": {"employee_count": 500, "industry": "Venture Capital", "country": "United States",
+        "signals": []},
+      "notes": "VC, IN-BAND (~500) -> size cannot catch; GATE must catch investor by what-it-is."
+    },
+    {
+      "name": "Y Combinator", "domain": "ycombinator.com", "url": "https://ycombinator.com",
+      "title": "Y Combinator - Startup Accelerator",
+      "snippet": "Y Combinator is a startup accelerator and investor; also hosts a startup directory and job board.",
+      "expected_label": "investor_vc", "expected_grade_band": null,
+      "firmographics": {"employee_count": 200, "industry": "Venture Capital", "country": "United States",
+        "signals": []},
+      "notes": "Accelerator/investor + directory. In-band-ish; GATE must catch."
+    },
+
+    {
+      "name": "Automate America", "domain": "automateamerica.com", "url": "https://automateamerica.com/jobs",
+      "title": "Automate America - Automation Engineering Jobs and Staffing",
+      "snippet": "Automate America connects automation and robotics engineers with contract jobs. Browse open positions.",
+      "expected_label": "job_board_or_directory", "expected_grade_band": null,
+      "firmographics": {"employee_count": 9, "industry": "Staffing", "country": "United States", "signals": []},
+      "notes": "Automation JOBS board. Live false positive. Tiny (~9) -> size floor also backstops, but URL /jobs + content should catch deterministically."
+    },
+    {
+      "name": "ZipRecruiter", "domain": "ziprecruiter.com", "url": "https://ziprecruiter.com",
+      "title": "ZipRecruiter - Online Employment Marketplace",
+      "snippet": "ZipRecruiter is an online job board connecting employers and job seekers.",
+      "expected_label": "job_board_or_directory", "expected_grade_band": null,
+      "firmographics": {"employee_count": 1500, "industry": "Internet", "country": "United States", "signals": []},
+      "notes": "Job board. Known junk domain -> deterministic catch."
+    },
+    {
+      "name": "G2", "domain": "g2.com", "url": "https://g2.com",
+      "title": "G2 - Business Software Reviews and Comparisons",
+      "snippet": "G2 is a software marketplace and review directory where buyers compare business software.",
+      "expected_label": "job_board_or_directory", "expected_grade_band": null,
+      "firmographics": {"employee_count": 900, "industry": "Internet", "country": "United States", "signals": []},
+      "notes": "Software DIRECTORY, IN-BAND (~900). Known junk domain; tests directory catch where size can't help."
+    },
+    {
+      "name": "Clutch", "domain": "clutch.co", "url": "https://clutch.co",
+      "title": "Clutch - B2B Ratings and Agency Directory",
+      "snippet": "Clutch is a B2B ratings and reviews directory listing agencies and service providers.",
+      "expected_label": "job_board_or_directory", "expected_grade_band": null,
+      "firmographics": {"employee_count": 300, "industry": "Internet", "country": "United States", "signals": []},
+      "notes": "Agency DIRECTORY, in-band (~300). Tests directory catch."
+    },
+
+    {
+      "name": "Top 10 AI Automation Agencies in 2026", "domain": "growthlist.co", "url": "https://growthlist.co/top-10-ai-automation-agencies-2026",
+      "title": "Top 10 AI Automation Agencies in 2026 (Ranked)",
+      "snippet": "We ranked the best AI automation agencies for 2026. Here are the top 10 firms to consider for your business.",
+      "expected_label": "listicle_or_content", "expected_grade_band": null,
+      "firmographics": {"employee_count": null, "industry": null, "country": null, "signals": []},
+      "notes": "Listicle URL, not a company. Title 'Top 10 ... agencies' + content domain -> deterministic catch."
+    },
+    {
+      "name": "What is workflow automation", "domain": "zapier.com", "url": "https://zapier.com/blog/what-is-workflow-automation",
+      "title": "What is Workflow Automation? A Beginner's Guide",
+      "snippet": "Workflow automation explained: definitions, benefits, and examples for teams getting started.",
+      "expected_label": "listicle_or_content", "expected_grade_band": null,
+      "firmographics": {"employee_count": null, "industry": null, "country": null, "signals": []},
+      "notes": "Explainer/content page on a /blog/ path with 'what is' title -> deterministic catch (even though zapier.com is a real co, THIS URL is content)."
+    }
+  ]
+}

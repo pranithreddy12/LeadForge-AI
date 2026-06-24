@@ -1,0 +1,91 @@
+- generic [active] [ref=e1]:
+  - generic [ref=e2]:
+    - complementary [ref=e3]:
+      - generic [ref=e4]:
+        - img [ref=e6]
+        - generic [ref=e8]: LeadForge
+        - generic [ref=e9]: AI
+      - navigation [ref=e10]:
+        - link "Dashboard" [ref=e11] [cursor=pointer]:
+          - /url: /dashboard
+          - img [ref=e12]
+          - text: Dashboard
+        - link "AI ICP" [ref=e17] [cursor=pointer]:
+          - /url: /icp
+          - img [ref=e18]
+          - text: AI ICP
+        - link "Leads" [ref=e20] [cursor=pointer]:
+          - /url: /leads
+          - img [ref=e21]
+          - text: Leads
+        - link "Contacts" [ref=e25] [cursor=pointer]:
+          - /url: /contacts
+          - img [ref=e26]
+          - text: Contacts
+        - link "Signals" [ref=e31] [cursor=pointer]:
+          - /url: /signals
+          - img [ref=e32]
+          - text: Signals
+        - link "CRM" [ref=e34] [cursor=pointer]:
+          - /url: /crm
+          - img [ref=e35]
+          - text: CRM
+        - link "Campaigns" [ref=e39] [cursor=pointer]:
+          - /url: /campaigns
+          - img [ref=e40]
+          - text: Campaigns
+        - link "Workflows" [ref=e43] [cursor=pointer]:
+          - /url: /workflows
+          - img [ref=e44]
+          - text: Workflows
+        - link "Ask AI" [ref=e48] [cursor=pointer]:
+          - /url: /chat
+          - img [ref=e49]
+          - text: Ask AI
+      - generic [ref=e51]:
+        - link "Billing" [ref=e52] [cursor=pointer]:
+          - /url: /billing
+          - img [ref=e53]
+          - text: Billing
+        - link "Settings" [ref=e55] [cursor=pointer]:
+          - /url: /settings
+          - img [ref=e56]
+          - text: Settings
+    - generic [ref=e59]:
+      - banner [ref=e60]:
+        - generic [ref=e61]:
+          - img [ref=e62]
+          - textbox "Search companies, contacts, signals…" [ref=e65]
+          - generic [ref=e66]:
+            - img [ref=e67]
+            - text: K
+        - button "Ask AI" [ref=e69] [cursor=pointer]:
+          - img [ref=e70]
+          - text: Ask AI
+        - generic [ref=e72]:
+          - generic [ref=e73]: Demo mode
+          - generic [ref=e74]:
+            - generic [ref=e75]: DF
+            - generic [ref=e76]: Demo Founder
+      - main [ref=e77]:
+        - generic [ref=e78]:
+          - generic [ref=e80]:
+            - heading "AI ICP Generator" [level=1] [ref=e81]
+            - paragraph [ref=e82]: Describe your business and we'll build your ideal customer profile.
+          - generic [ref=e83]:
+            - generic [ref=e84]:
+              - heading "Generate a new ICP" [level=3] [ref=e85]:
+                - img [ref=e86]
+                - text: Generate a new ICP
+              - paragraph [ref=e88]:
+                - text: "Example:"
+                - emphasis [ref=e89]: "\"We are a QA automation agency serving SaaS Series A–B companies.\""
+            - generic [ref=e90]:
+              - textbox "Describe your business…" [ref=e91]
+              - textbox "Service offering (optional)" [ref=e92]
+              - generic [ref=e93]:
+                - button "Generate ICP" [disabled]:
+                  - img
+                  - text: Generate ICP
+  - region "Notifications alt+T"
+  - alert [ref=e94]

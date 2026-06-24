@@ -86,6 +86,9 @@ class Settings(BaseSettings):
     gmail_address: str = ""
     gmail_app_password: str = ""   # 16-char Google App Password (not your login pw)
     gmail_from_name: str = "LeadForge"
+    # Outreach send caps — Gmail allows ~500/day; default conservative for piloting.
+    max_emails_per_run: int = 25
+    max_emails_per_day: int = 50
 
     # Telegram notifications
     telegram_bot_token: str = ""

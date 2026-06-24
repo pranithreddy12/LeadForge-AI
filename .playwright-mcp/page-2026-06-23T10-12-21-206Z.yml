@@ -1,0 +1,167 @@
+- generic [active] [ref=e1]:
+  - generic [ref=e2]:
+    - complementary [ref=e3]:
+      - generic [ref=e4]:
+        - img [ref=e6]
+        - generic [ref=e8]: LeadForge
+        - generic [ref=e9]: AI
+      - navigation [ref=e10]:
+        - link "Dashboard" [ref=e11] [cursor=pointer]:
+          - /url: /dashboard
+          - img [ref=e12]
+          - text: Dashboard
+        - link "AI ICP" [ref=e17] [cursor=pointer]:
+          - /url: /icp
+          - img [ref=e18]
+          - text: AI ICP
+        - link "Opportunities" [ref=e20] [cursor=pointer]:
+          - /url: /opportunities
+          - img [ref=e21]
+          - text: Opportunities
+        - link "Leads" [ref=e23] [cursor=pointer]:
+          - /url: /leads
+          - img [ref=e24]
+          - text: Leads
+        - link "Contacts" [ref=e28] [cursor=pointer]:
+          - /url: /contacts
+          - img [ref=e29]
+          - text: Contacts
+        - link "Signals" [ref=e34] [cursor=pointer]:
+          - /url: /signals
+          - img [ref=e35]
+          - text: Signals
+        - link "CRM" [ref=e37] [cursor=pointer]:
+          - /url: /crm
+          - img [ref=e38]
+          - text: CRM
+        - link "Campaigns" [ref=e42] [cursor=pointer]:
+          - /url: /campaigns
+          - img [ref=e43]
+          - text: Campaigns
+        - link "Workflows" [ref=e46] [cursor=pointer]:
+          - /url: /workflows
+          - img [ref=e47]
+          - text: Workflows
+        - link "Ask AI" [ref=e51] [cursor=pointer]:
+          - /url: /chat
+          - img [ref=e52]
+          - text: Ask AI
+      - generic [ref=e54]:
+        - link "Billing" [ref=e55] [cursor=pointer]:
+          - /url: /billing
+          - img [ref=e56]
+          - text: Billing
+        - link "Settings" [ref=e58] [cursor=pointer]:
+          - /url: /settings
+          - img [ref=e59]
+          - text: Settings
+    - generic [ref=e62]:
+      - banner [ref=e63]:
+        - generic [ref=e64]:
+          - img [ref=e65]
+          - textbox "Search companies, contacts, signals…" [ref=e68]
+          - generic [ref=e69]:
+            - img [ref=e70]
+            - text: K
+        - button "Ask AI" [ref=e72] [cursor=pointer]:
+          - img [ref=e73]
+          - text: Ask AI
+        - generic [ref=e75]:
+          - generic [ref=e76]: Demo mode
+          - generic [ref=e77]:
+            - generic [ref=e78]: DF
+            - generic [ref=e79]: Demo Founder
+      - main [ref=e80]:
+        - generic [ref=e81]:
+          - generic [ref=e83]:
+            - generic [ref=e84]:
+              - img [ref=e86]
+              - generic [ref=e90]:
+                - heading "Innovate Finance" [level=1] [ref=e91]
+                - generic [ref=e92]:
+                  - link "innovatefinance.com" [ref=e93] [cursor=pointer]:
+                    - /url: https://innovatefinance.com
+                    - img [ref=e94]
+                    - text: innovatefinance.com
+                  - generic [ref=e97]: new
+            - generic [ref=e98]:
+              - button "Enrich" [ref=e99] [cursor=pointer]:
+                - img [ref=e100]
+                - text: Enrich
+              - button "Detect signals" [ref=e104] [cursor=pointer]:
+                - img [ref=e105]
+                - text: Detect signals
+              - button "Find contacts" [ref=e107] [cursor=pointer]:
+                - img [ref=e108]
+                - text: Find contacts
+              - button "Score" [ref=e113] [cursor=pointer]:
+                - img [ref=e114]
+                - text: Score
+          - generic [ref=e116]:
+            - heading "Firmographics not enriched" [level=3] [ref=e118]:
+              - text: Firmographics
+              - generic [ref=e119]: not enriched
+            - generic [ref=e120]:
+              - generic [ref=e121]:
+                - generic [ref=e122]:
+                  - generic [ref=e123]:
+                    - img [ref=e124]
+                    - text: Industry
+                  - generic [ref=e128]: —
+                - generic [ref=e129]:
+                  - generic [ref=e130]:
+                    - img [ref=e131]
+                    - text: Employees
+                  - generic [ref=e136]: —
+                - generic [ref=e137]:
+                  - generic [ref=e138]:
+                    - img [ref=e139]
+                    - text: Revenue
+                  - generic [ref=e141]: —
+                - generic [ref=e142]:
+                  - generic [ref=e143]:
+                    - img [ref=e144]
+                    - text: Funding
+                  - generic [ref=e147]: —
+                - generic [ref=e148]:
+                  - generic [ref=e149]:
+                    - img [ref=e150]
+                    - text: HQ
+                  - generic [ref=e153]: —
+                - generic [ref=e154]:
+                  - generic [ref=e155]:
+                    - img [ref=e156]
+                    - text: Founded
+                  - generic [ref=e160]: —
+              - paragraph [ref=e161]: We are helping to transform financial services globally – from startups and scaleups to global corporates and established financial institutions.
+          - generic [ref=e162]:
+            - generic [ref=e163]:
+              - generic [ref=e164]:
+                - heading "Lead score —" [level=3] [ref=e165]:
+                  - text: Lead score
+                  - generic [ref=e166]: —
+                - paragraph
+              - generic [ref=e168]: Not scored yet.
+            - generic [ref=e169]:
+              - heading "Why this account, now" [level=3] [ref=e171]
+              - paragraph [ref=e173]: Run a scoring pass to see reasoning.
+          - generic [ref=e174]:
+            - tablist [ref=e175]:
+              - tab "Research" [ref=e176] [cursor=pointer]
+              - tab "Signals (0)" [selected] [ref=e177] [cursor=pointer]
+              - tab "Contacts (0)" [ref=e178] [cursor=pointer]
+              - tab "Outreach" [ref=e179] [cursor=pointer]
+            - tabpanel "Signals (0)" [ref=e180]:
+              - generic [ref=e183]:
+                - text: No signals yet — click
+                - emphasis [ref=e184]: Detect signals
+                - text: .
+  - region "Notifications alt+T"
+  - status [ref=e185]:
+    - generic [ref=e186]:
+      - img [ref=e188]
+      - generic [ref=e190]:
+        - text: Static route
+        - button "Hide static indicator" [ref=e191] [cursor=pointer]:
+          - img [ref=e192]
+  - alert [ref=e82]

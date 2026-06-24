@@ -5,7 +5,7 @@ import uuid
 from dataclasses import dataclass
 from urllib.parse import urlparse
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.ai.qualification_engine import Candidate, qualify_candidates
@@ -36,6 +36,15 @@ class DiscoveredCompany:
     industry: str | None = None
     confidence: int | None = None
     ai_verified: bool = True
+    # Buying signal attached when this company was EXTRACTED from a signal source
+    # (funding news / own careers page). Persisted as a real Signal row so scoring +
+    # the UI see the intent — not just an in-memory artifact.
+    signal: dict | None = None
+    # Gate outcome: None for confirmed buyers; "held_unknown" for candidates the gate
+    # couldn't confirm (provider error / low confidence). Held rows ARE persisted (so a
+    # retry can re-classify and outreach can suppress them) but kept OUT of the scoring
+    # pipeline until confirmed.
+    classification_status: str | None = None
 
 
 def _domain_from_url(url: str) -> str | None:
@@ -83,6 +92,7 @@ def build_queries(icp: ICP, extra_keywords: list[str] | None = None) -> list[str
             "industries": icp.industries, "buyer_personas": icp.buyer_personas,
             "buying_signals": icp.buying_signals, "countries": icp.countries,
             "keywords": icp.keywords,
+            "employee_min": icp.employee_min, "employee_max": icp.employee_max,
         }
         generated = generate_search_queries(business_description=business, icp=icp_dict, limit=10)
         if generated:
@@ -141,13 +151,22 @@ def discover_via_search(icp: ICP, *, limit: int = 25,
     queries = build_queries(icp, extra_keywords)
     raw: dict[str, Candidate] = {}   # keyed by domain to dedupe early
 
+    from app.services.serp_filter import process_hit
+
+    def _two_track(title, url, snippet, src):
+        # Track 1 drop junk; track 2 extract named companies from funding/job sources.
+        cand = process_hit(title=title, url=url, snippet=snippet, source=src,
+                           drop_junk=True, extract=True)
+        if cand and cand.domain and not _is_excluded(cand.domain) and cand.domain not in raw:
+            raw[cand.domain] = cand
+
     for q in queries:
         for hit in tavily_search(q, max_results=10):
             src = "demo" if hit.get("demo") else "tavily"
-            _collect(raw, hit.get("title"), hit.get("url"), hit.get("content"), source=src)
+            _two_track(hit.get("title"), hit.get("url"), hit.get("content"), src)
         for hit in serper_search(q, max_results=10):
             src = "demo" if hit.get("demo") else "serper"
-            _collect(raw, hit.get("title"), hit.get("link"), hit.get("snippet"), source=src)
+            _two_track(hit.get("title"), hit.get("link"), hit.get("snippet"), src)
         # collect a bit more than `limit` so qualification has room to reject.
         if len(raw) >= limit * 4:
             break
@@ -158,8 +177,9 @@ def discover_via_search(icp: ICP, *, limit: int = 25,
         seller = icp.project.business_description or None
         if seller and icp.project.target_offering:
             seller += f"\nOffering: {icp.project.target_offering}"
-    accepted, stats = qualify_candidates(candidates, seller_description=seller)
-    log.info("discovery_qualified", **stats)
+    accepted, stats, held = qualify_candidates(candidates, seller_description=seller)
+    log.info("discovery_qualified", total=stats["total"], accepted=stats["accepted"],
+             held=stats["held_unknown"], by_label=stats["by_label"])
 
     out: list[DiscoveredCompany] = []
     for a in accepted[:limit]:
@@ -174,8 +194,32 @@ def discover_via_search(icp: ICP, *, limit: int = 25,
             industry=a["industry"] or None,
             confidence=a["confidence"],
             ai_verified=a.get("ai_verified", True),
+            signal=c.signal,
         ))
+    # `held` (unknown / provider-error) candidates ARE persisted, marked held_unknown,
+    # so a future pass can re-classify them and outreach can suppress them — but they
+    # are kept OUT of the scoring/outreach pipeline until confirmed (the worker filters
+    # company_ids by classification_status). Nothing-static: a transient LLM error
+    # holds the candidate, never silently sends it and never drops it.
+    for h in held:
+        c = h["candidate"]
+        if not c.domain:
+            continue
+        out.append(DiscoveredCompany(
+            name=_clean_held_name(c), domain=c.domain, website=f"https://{c.domain}",
+            description=(c.snippet or "")[:1000] or None, linkedin_url=None,
+            source=c.source, industry=None, confidence=None, ai_verified=False,
+            signal=c.signal, classification_status="held_unknown",
+        ))
+    if held:
+        log.info("discovery_held_unknown", n=len(held),
+                 domains=[h["candidate"].domain for h in held][:20])
     return out
+
+
+def _clean_held_name(c) -> str:
+    from app.ai.qualification_engine import _clean_title
+    return _clean_title(c.title) or (c.domain or "unknown")
 
 
 def _collect(seen: dict, title: str | None, url: str | None, snippet: str | None,
@@ -221,12 +265,32 @@ def persist_candidates(
             description=c.description,
             industry=c.industry,
             source=c.source,
+            classification_status=c.classification_status,
             raw={"qualification_confidence": c.confidence,
                  "ai_verified": c.ai_verified},
         )
         db.add(row)
-        out.append(row)
+        out.append((row, c.signal))
+    db.flush()  # assign company ids before attaching signals
+
+    # Persist EXTRACTED buying signals as real Signal rows so scoring + the UI see the
+    # intent (not just an in-memory artifact), and so a re-discovery tomorrow doesn't
+    # start the company cold. Signal-source extraction already established the fact.
+    from app.models.signal import Signal
+    for row, signal in out:
+        if not signal:
+            continue
+        db.add(Signal(
+            organization_id=organization_id, company_id=row.id,
+            kind=signal.get("type", "other"),
+            label=(signal.get("detail") or signal.get("type", "signal"))[:200],
+            description=signal.get("detail"),
+            severity=0.6, confidence=0.7,
+            source="discovery_extract", observed_at=func.now(),
+            payload={"extracted": True, "type": signal.get("type")},
+        ))
     db.commit()
-    for row in out:
+    companies = [row for row, _ in out]
+    for row in companies:
         db.refresh(row)
-    return out
+    return companies

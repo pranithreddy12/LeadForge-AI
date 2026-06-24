@@ -1,0 +1,264 @@
+- generic [active] [ref=e1]:
+  - generic [ref=e2]:
+    - complementary [ref=e3]:
+      - generic [ref=e4]:
+        - img [ref=e6]
+        - generic [ref=e8]: LeadForge
+        - generic [ref=e9]: AI
+      - navigation [ref=e10]:
+        - link "Dashboard" [ref=e11] [cursor=pointer]:
+          - /url: /dashboard
+          - img [ref=e12]
+          - text: Dashboard
+        - link "AI ICP" [ref=e17] [cursor=pointer]:
+          - /url: /icp
+          - img [ref=e18]
+          - text: AI ICP
+        - link "Opportunities" [ref=e20] [cursor=pointer]:
+          - /url: /opportunities
+          - img [ref=e21]
+          - text: Opportunities
+        - link "Leads" [ref=e23] [cursor=pointer]:
+          - /url: /leads
+          - img [ref=e24]
+          - text: Leads
+        - link "Contacts" [ref=e28] [cursor=pointer]:
+          - /url: /contacts
+          - img [ref=e29]
+          - text: Contacts
+        - link "Signals" [ref=e34] [cursor=pointer]:
+          - /url: /signals
+          - img [ref=e35]
+          - text: Signals
+        - link "CRM" [ref=e37] [cursor=pointer]:
+          - /url: /crm
+          - img [ref=e38]
+          - text: CRM
+        - link "Campaigns" [ref=e42] [cursor=pointer]:
+          - /url: /campaigns
+          - img [ref=e43]
+          - text: Campaigns
+        - link "Workflows" [ref=e46] [cursor=pointer]:
+          - /url: /workflows
+          - img [ref=e47]
+          - text: Workflows
+        - link "Ask AI" [ref=e51] [cursor=pointer]:
+          - /url: /chat
+          - img [ref=e52]
+          - text: Ask AI
+      - generic [ref=e54]:
+        - link "Billing" [ref=e55] [cursor=pointer]:
+          - /url: /billing
+          - img [ref=e56]
+          - text: Billing
+        - link "Settings" [ref=e58] [cursor=pointer]:
+          - /url: /settings
+          - img [ref=e59]
+          - text: Settings
+    - generic [ref=e62]:
+      - banner [ref=e63]:
+        - generic [ref=e64]:
+          - img [ref=e65]
+          - textbox "Search companies, contacts, signals…" [ref=e68]
+          - generic [ref=e69]:
+            - img [ref=e70]
+            - text: K
+        - button "Ask AI" [ref=e72] [cursor=pointer]:
+          - img [ref=e73]
+          - text: Ask AI
+        - generic [ref=e75]:
+          - generic [ref=e76]: Demo mode
+          - generic [ref=e77]:
+            - generic [ref=e78]: DF
+            - generic [ref=e79]: Demo Founder
+      - main [ref=e80]:
+        - generic [ref=e81]:
+          - generic [ref=e82]:
+            - generic [ref=e83]:
+              - img [ref=e85]
+              - generic [ref=e89]:
+                - heading "Innovate Finance" [level=1] [ref=e90]
+                - generic [ref=e91]:
+                  - link "innovatefinance.com" [ref=e92] [cursor=pointer]:
+                    - /url: https://innovatefinance.com
+                    - img [ref=e93]
+                    - text: innovatefinance.com
+                  - generic [ref=e96]: new
+            - generic [ref=e97]:
+              - button "Enrich" [ref=e98] [cursor=pointer]:
+                - img [ref=e99]
+                - text: Enrich
+              - button "Detect signals" [ref=e103] [cursor=pointer]:
+                - img [ref=e104]
+                - text: Detect signals
+              - button "Find contacts" [ref=e106] [cursor=pointer]:
+                - img [ref=e107]
+                - text: Find contacts
+              - button "Score" [ref=e112] [cursor=pointer]:
+                - img [ref=e113]
+                - text: Score
+          - generic [ref=e115]:
+            - heading "Firmographics enriched" [level=3] [ref=e117]:
+              - text: Firmographics
+              - generic [ref=e118]: enriched
+            - generic [ref=e119]:
+              - generic [ref=e120]:
+                - generic [ref=e121]:
+                  - generic [ref=e122]:
+                    - img [ref=e123]
+                    - text: Industry
+                  - generic [ref=e127]: —
+                - generic [ref=e128]:
+                  - generic [ref=e129]:
+                    - img [ref=e130]
+                    - text: Employees
+                  - generic [ref=e135]: —
+                - generic [ref=e136]:
+                  - generic [ref=e137]:
+                    - img [ref=e138]
+                    - text: Revenue
+                  - generic [ref=e140]: —
+                - generic [ref=e141]:
+                  - generic [ref=e142]:
+                    - img [ref=e143]
+                    - text: Funding
+                  - generic [ref=e146]: —
+                - generic [ref=e147]:
+                  - generic [ref=e148]:
+                    - img [ref=e149]
+                    - text: HQ
+                  - generic [ref=e152]: —
+                - generic [ref=e153]:
+                  - generic [ref=e154]:
+                    - img [ref=e155]
+                    - text: Founded
+                  - generic [ref=e159]: —
+              - generic [ref=e160]:
+                - generic [ref=e161]: Tech stack (3)
+                - generic [ref=e162]:
+                  - generic [ref=e163]: Google Tag Manager
+                  - generic [ref=e164]: HubSpot
+                  - generic [ref=e165]: WordPress
+              - paragraph [ref=e166]: We are helping to transform financial services globally – from startups and scaleups to global corporates and established financial institutions.
+          - generic [ref=e167]:
+            - generic [ref=e168]:
+              - generic [ref=e169]:
+                - heading "Lead score —" [level=3] [ref=e170]:
+                  - text: Lead score
+                  - generic [ref=e171]: —
+                - paragraph
+              - generic [ref=e173]: Not scored yet.
+            - generic [ref=e174]:
+              - heading "Why this account, now" [level=3] [ref=e176]
+              - paragraph [ref=e178]: Run a scoring pass to see reasoning.
+          - generic [ref=e179]:
+            - tablist [ref=e180]:
+              - tab "Research" [selected] [ref=e181] [cursor=pointer]
+              - tab "Signals (1)" [ref=e182] [cursor=pointer]
+              - tab "Contacts (0)" [ref=e183] [cursor=pointer]
+              - tab "Outreach" [ref=e184] [cursor=pointer]
+            - tabpanel "Research" [ref=e185]:
+              - generic [ref=e186]:
+                - generic [ref=e187]:
+                  - heading "AI Account Research Re-research" [level=3] [ref=e188]:
+                    - generic [ref=e189]:
+                      - img [ref=e190]
+                      - text: AI Account Research
+                    - button "Re-research" [ref=e194] [cursor=pointer]:
+                      - img [ref=e195]
+                      - text: Re-research
+                  - paragraph [ref=e199]: Generated 6m ago · confidence 3/100 · 14 sources
+                - generic [ref=e200]:
+                  - paragraph [ref=e201]: Innovate Finance is an organization focused on transforming financial services globally, with a particular emphasis on the FinTech ecosystem. They host major industry events like the Innovate Finance Global Summit (IFGS) and publish reports on fintech funding. Their recent activities include launching initiatives like the Pride in FinTech PowerList and exploring AI's impact on finance.
+                  - generic [ref=e202]:
+                    - generic [ref=e203]:
+                      - img [ref=e204]
+                      - text: Pain points
+                    - list [ref=e206]:
+                      - listitem [ref=e207]:
+                        - generic [ref=e208]: •
+                        - generic [ref=e209]: Managing financial planning and analysis for a global organization with diverse initiatives.
+                      - listitem [ref=e210]:
+                        - generic [ref=e211]: •
+                        - generic [ref=e212]: Securing and optimizing funding for various FinTech ecosystem projects and programs.
+                      - listitem [ref=e213]:
+                        - generic [ref=e214]: •
+                        - generic [ref=e215]: Understanding and leveraging AI for financial operations and innovation.
+                      - listitem [ref=e216]:
+                        - generic [ref=e217]: •
+                        - generic [ref=e218]: Navigating the complexities of financial services transformation across startups, scaleups, and corporates.
+                  - generic [ref=e219]:
+                    - generic [ref=e220]:
+                      - img [ref=e221]
+                      - text: Current initiatives
+                    - list [ref=e226]:
+                      - listitem [ref=e227]:
+                        - generic [ref=e228]: •
+                        - generic [ref=e229]: Hosting the Innovate Finance Global Summit (IFGS) in April 2026.
+                      - listitem [ref=e230]:
+                        - generic [ref=e231]: •
+                        - generic [ref=e232]: Launching the 4th Annual Pride in FinTech PowerList 2026 with a new mentorship program and leadership council.
+                      - listitem [ref=e233]:
+                        - generic [ref=e234]: •
+                        - generic [ref=e235]: Publishing reports on global fintech funding trends (e.g., a report indicating a 21% surge in 2025).
+                      - listitem [ref=e236]:
+                        - generic [ref=e237]: •
+                        - generic [ref=e238]: Exploring the practical impact of AI on various sectors, including finance, through webinars.
+                      - listitem [ref=e239]:
+                        - generic [ref=e240]: •
+                        - generic [ref=e241]: Engaging in dialogue with the finance industry to de-risk energy efficiency financing and attract private investment.
+                  - generic [ref=e242]:
+                    - generic [ref=e243]:
+                      - img [ref=e244]
+                      - text: Growth signals
+                    - list [ref=e247]:
+                      - listitem [ref=e248]:
+                        - generic [ref=e249]: •
+                        - generic [ref=e250]: Global fintech funding surged 21% in 2025, with $53 billion secured worldwide.
+                      - listitem [ref=e251]:
+                        - generic [ref=e252]: •
+                        - generic [ref=e253]: Launch of new initiatives like the Pride in FinTech PowerList and associated mentorship programs.
+                      - listitem [ref=e254]:
+                        - generic [ref=e255]: •
+                        - generic [ref=e256]: Hosting major industry events attracting global leaders.
+                      - listitem [ref=e257]:
+                        - generic [ref=e258]: •
+                        - generic [ref=e259]: Increased focus on AI innovation within the financial sector, as seen in Hong Kong's AI Sandbox++ initiative.
+                  - generic [ref=e260]:
+                    - generic [ref=e261]:
+                      - img [ref=e262]
+                      - text: Recommended pitch
+                      - generic [ref=e266]: → CEO or Head of Finance
+                    - paragraph [ref=e267]: Given Innovate Finance's role in transforming financial services and their focus on innovation, they may be interested in optimizing financial planning and analysis for their global operations and diverse initiatives. We help venture-backed startups achieve this without the overhead of a full-time CFO.
+                  - generic [ref=e268]:
+                    - generic [ref=e269]: Sources
+                    - generic [ref=e270]:
+                      - link "↗ UK FinTech Week | Innovate Finance – The Voice of Global FinTech" [ref=e271] [cursor=pointer]:
+                        - /url: https://www.innovatefinance.com/ukfintechweek
+                      - link "↗ The latest from Innovate Finance and the FinTech ecosystem" [ref=e272] [cursor=pointer]:
+                        - /url: https://www.linkedin.com/pulse/latest-from-innovate-finance-fintech-ecosystem-innovate-finance-7y9ye
+                      - link "↗ 2026 FinTech New Year's Reception in New York - Innovate Finance" [ref=e273] [cursor=pointer]:
+                        - /url: https://www.innovatefinance.com/events/2026-fintech-new-years-reception-in-new-york
+                      - 'link "↗ PRESS RELEASE: Global Finance Names The Innovators 2026" [ref=e274] [cursor=pointer]':
+                        - /url: https://gfmag.com/award/winner-announcements/press-release-global-finance-names-the-innovators-2026-the-most-innovative-banks-and-most-innovative-financial-technology-companies
+                      - link "↗ Innovate Finance Launches 4th Annual Pride in FinTech PowerList 2026, With New Mentorship Programme and Leadership Council" [ref=e275] [cursor=pointer]:
+                        - /url: https://ffnews.com/newsarticle/innovate-finance-launches-4th-annual-pride-in-fintech-powerlist-2026-with-new-mentorship-programme-and-leadership-council/
+                      - link "↗ Rice Business event explores how AI can innovate hiring, finance, health care and more" [ref=e276] [cursor=pointer]:
+                        - /url: https://news.rice.edu/news/2026/rice-business-event-explores-how-ai-can-innovate-hiring-finance-health-care-and-more
+                      - link "↗ Global fintech funding surges 21% in 2025, according to new Innovate Finance report" [ref=e277] [cursor=pointer]:
+                        - /url: https://www.fintechfutures.com/venture-capital-funding/global-fintech-funding-surges-21-percent-in-2025-according-to-new-innovate-finance-report
+                      - link "↗ Private and innovative financing" [ref=e278] [cursor=pointer]:
+                        - /url: https://energy.ec.europa.eu/topics/energy-efficiency/financing/private-and-innovative-financing_en
+                      - link "↗ New Funding Models Needed As Global Health Faces Growing Financial Strain" [ref=e279] [cursor=pointer]:
+                        - /url: https://healthpolicy-watch.news/new-funding-models-needed-as-global-health-faces-growing-financial-strain/
+                      - link "↗ CFIT secures public and private funding to drive UK financial innovation" [ref=e280] [cursor=pointer]:
+                        - /url: https://www.openbankingexpo.com/news/cfit-secures-vote-of-confidence-with-public-and-private-funding-to-drive-uk-financial-innovation/
+  - region "Notifications alt+T"
+  - status [ref=e281]:
+    - generic [ref=e282]:
+      - img [ref=e284]
+      - generic [ref=e286]:
+        - text: Static route
+        - button "Hide static indicator" [ref=e287] [cursor=pointer]:
+          - img [ref=e288]
+  - alert [ref=e291]

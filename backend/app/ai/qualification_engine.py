@@ -98,6 +98,9 @@ class Candidate:
     domain: str | None
     snippet: str | None
     source: str
+    # Pre-attached buying signal when this candidate was EXTRACTED from a signal
+    # source (funding news / job posting), e.g. {"type": "funding", "detail": "..."}.
+    signal: dict | None = None
 
 
 # First-labels that mark a job/ATS or content SUBDOMAIN (only when a parent
@@ -136,6 +139,169 @@ def deterministic_reject(c: Candidate) -> str | None:
     if len(_clean_title(c.title or "").split()) > 12:
         return "title_too_long"
     return None
+
+
+# ---- 8-way classifier (Phase 1B) ------------------------------------------
+#
+# The binary is_company gate leaked the IN-BAND classes (vendor/investor_vc/too_large)
+# as "buyer" — precision ~50%. This replaces it with an explicit label per candidate:
+TAXONOMY = ["buyer", "competitor", "vendor", "investor_vc",
+            "job_board_or_directory", "listicle_or_content", "too_large", "unknown"]
+# Only `buyer` proceeds to enrich/score/outreach. `unknown` is HELD (persist flagged,
+# re-classify next run) — never dropped, never sent. Everything else is rejected.
+
+# Maps the deterministic_reject reason -> a taxonomy label, so heuristic catches are
+# free, fast, and reported separately from the LLM.
+_DET_REASON_TO_LABEL = {
+    "junk_domain": "job_board_or_directory",
+    "junk_subdomain": "job_board_or_directory",
+    "content_path": "listicle_or_content",
+    "content_title": "listicle_or_content",
+    "title_too_long": "listicle_or_content",
+}
+
+
+def heuristic_classify(c: Candidate) -> tuple[str | None, str]:
+    """Deterministic, LLM-free first pass. Returns (label, reason) when confident,
+    else (None, "") to defer to the AI classifier. HIGH PRECISION only — a wrong
+    reject here is worse than one extra LLM row."""
+    reason = deterministic_reject(c)
+    if reason:
+        return _DET_REASON_TO_LABEL.get(reason, "job_board_or_directory"), reason
+    dom = (c.domain or "").lower()
+    # VC/investor by TLD — VCs are firmographically tiny and in-band, so only a
+    # what-they-are cue catches them deterministically.
+    if dom.endswith(".vc") or dom.endswith(".ventures"):
+        return "investor_vc", "vc_tld"
+    return None, ""
+
+
+_CLASSIFY_SYSTEM = """\
+You classify B2B web-search results for a lead-gen system. For EACH numbered entry
+(title, domain, snippet) assign exactly ONE label:
+
+- buyer: a real operating company that could BUY the seller's service. A buyer
+  CONSUMES automation/software to run its business. This INCLUDES software companies
+  whose product is something OTHER than automation — e.g. security/compliance (Vanta),
+  content creation (Jasper), planning/forecasting (Pigment), banking (Mercury),
+  e-commerce platforms (OroCommerce), customer engagement/retention (Stellar), as well
+  as non-software operators (DTC brands, clinics, insurance brokerages). Selling
+  software does NOT make a company a vendor.
+- competitor: a company whose offering is the SAME as the seller's (see SELLER
+  block) — e.g. another agency / done-for-you service selling the same outcomes.
+- vendor: ONLY when the company's PRIMARY PRODUCT IS automation / workflow / integration
+  / RPA / RevOps tooling itself — i.e. it sells AUTOMATION as the product. Examples:
+  Zapier, Make, UiPath (RPA), Clari (RevOps), Notable (workflow-automation), an
+  industrial-automation maker. DECISIVE TEST: would a buyer purchase THIS company's
+  product to automate their own work? If yes -> vendor. If the company merely USES
+  automation while selling something else -> buyer. IGNORE the words "automated/
+  automation" used as a marketing adjective (e.g. "automated compliance") — classify by
+  what the company SELLS, not buzzwords.
+- investor_vc: a venture capital firm, accelerator, or investor.
+- job_board_or_directory: job board, staffing site, software/agency directory,
+  review marketplace.
+- listicle_or_content: a blog post, "what is / how to" explainer, "top N / best X"
+  listicle, news article — a PAGE, not a company.
+- too_large: a real company but far too big for a mid-market ICP (snippet implies
+  many thousands of employees / global enterprise giant).
+- unknown: you genuinely cannot tell from the evidence. Use this rather than
+  guessing "buyer".
+
+KEY RULE: consumes automation => buyer; SELLS automation/RevOps/AI-workflow =>
+vendor or competitor. When unsure, prefer unknown over buyer. Give a one-line
+reason citing a CONCRETE fact from the title/snippet (what the company does).
+"""
+
+_CLASSIFY_SCHEMA: dict = {
+    "type": "object",
+    "additionalProperties": False,
+    "properties": {
+        "results": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "additionalProperties": False,
+                "properties": {
+                    "index": {"type": "integer"},
+                    "label": {"type": "string", "enum": TAXONOMY},
+                    "reason": {"type": "string"},
+                    "confidence": {"type": "integer"},
+                },
+                "required": ["index", "label", "reason", "confidence"],
+            },
+        }
+    },
+    "required": ["results"],
+}
+
+
+def ai_classify(candidates: list[Candidate], *, seller_description: str | None = None) -> dict:
+    """One batched LLM call -> {"results": [...]} or {"_provider_error": True}."""
+    if not candidates:
+        return {"results": []}
+    listing = "\n".join(
+        f"{i}. title={c.title!r} domain={c.domain!r} snippet={(c.snippet or '')[:160]!r}"
+        for i, c in enumerate(candidates)
+    )
+    seller_block = ""
+    if seller_description:
+        sd = seller_description.strip()
+        offering = ""
+        if "Offering:" in sd:
+            sd, _, offering = sd.partition("Offering:")
+            offering = " Offering:" + offering.strip()
+        seller_block = f"SELLER offers:{offering[:200]} {sd[:300]}\n\n"
+    user = (f"{seller_block}Classify these {len(candidates)} results. One object per "
+            f"index (0..{len(candidates) - 1}).\n\n{listing}")
+    out = complete_json(system=_CLASSIFY_SYSTEM, user=user, schema_name="Classify",
+                        schema=_CLASSIFY_SCHEMA, temperature=0.0)
+    if out.get("_provider_error"):
+        return {"_provider_error": True}
+    return out
+
+
+def classify_candidates(candidates: list[Candidate], *, seller_description: str | None = None,
+                        min_confidence: int = 55) -> list[dict]:
+    """Heuristic-first, then LLM for the rest. Returns one dict per candidate:
+        {index, label, reason, source: heuristic|llm|provider_error, confidence}
+
+    On provider error the unresolved candidates become `unknown` (HELD — never
+    `buyer`, never dropped). A low-confidence `buyer` from the LLM is downgraded to
+    `unknown` so only confident buyers proceed.
+    """
+    results: list[dict | None] = [None] * len(candidates)
+    to_llm: list[int] = []
+    for i, c in enumerate(candidates):
+        label, reason = heuristic_classify(c)
+        if label:
+            results[i] = {"index": i, "label": label, "reason": reason,
+                          "source": "heuristic", "confidence": 95}
+        else:
+            to_llm.append(i)
+
+    if to_llm:
+        judged = ai_classify([candidates[i] for i in to_llm],
+                             seller_description=seller_description)
+        if judged.get("_provider_error"):
+            log.warning("classify_provider_error_unknown_hold", n=len(to_llm),
+                        domains=[candidates[i].domain for i in to_llm])
+            for i in to_llm:
+                results[i] = {"index": i, "label": "unknown",
+                              "reason": "provider_error: hold and re-classify next run",
+                              "source": "provider_error", "confidence": 0}
+        else:
+            by_sub = {r["index"]: r for r in judged.get("results", []) if "index" in r}
+            for sub_i, i in enumerate(to_llm):
+                r = by_sub.get(sub_i, {})
+                label = r.get("label") if r.get("label") in TAXONOMY else "unknown"
+                conf = int(r.get("confidence", 0))
+                # Only CONFIDENT buyers proceed; a shaky buyer is held as unknown.
+                if label == "buyer" and conf < min_confidence:
+                    label = "unknown"
+                results[i] = {"index": i, "label": label,
+                              "reason": (r.get("reason") or "").strip(),
+                              "source": "llm", "confidence": conf}
+    return [r for r in results if r is not None]
 
 
 # ---- Stage 2: batched AI classifier ---------------------------------------
@@ -259,44 +425,40 @@ def ai_qualify(candidates: list[Candidate], *, min_confidence: int = 55,
 
 def qualify_candidates(candidates: list[Candidate], *, min_confidence: int = 55,
                        seller_description: str | None = None
-                       ) -> tuple[list[dict], dict]:
-    """Full pipeline: deterministic reject → AI classify the survivors.
+                       ) -> tuple[list[dict], dict, list[dict]]:
+    """Full 8-way pipeline (Phase 1B): heuristic-first, then LLM for the rest.
 
-    When `seller_description` is provided, direct competitors are rejected too.
-
-    Returns (accepted, stats) where accepted is a list of
-        {"candidate", "company_name", "industry", "confidence", "ai_verified"}
-    and stats summarizes the funnel for logging/telemetry.
+    Returns (accepted, stats, held):
+      - accepted: candidates labeled `buyer` -> proceed to enrich/score/outreach.
+          [{"candidate","company_name","industry","confidence","ai_verified","reason"}]
+      - held: candidates labeled `unknown` (incl. provider-error) -> HOLD, never sent,
+          re-classify next run. [{"candidate","reason","source"}]
+      - stats: funnel counts incl. per-label and per-source (heuristic vs llm).
+    Everything else (vendor/competitor/investor_vc/job_board/listicle/too_large) is
+    rejected. NOTHING-STATIC: on provider error rows become `unknown` (held), never
+    `buyer`, never demo-fallback.
     """
-    stats = {"total": len(candidates), "rejected_deterministic": 0,
-             "rejected_ai": 0, "rejected_competitor": 0, "accepted": 0}
-
-    survivors: list[Candidate] = []
-    for c in candidates:
-        reason = deterministic_reject(c)
-        if reason:
-            stats["rejected_deterministic"] += 1
-        else:
-            survivors.append(c)
-
-    judged = ai_qualify(survivors, min_confidence=min_confidence,
-                        seller_description=seller_description)
+    judged = classify_candidates(candidates, seller_description=seller_description,
+                                 min_confidence=min_confidence)
     accepted: list[dict] = []
+    held: list[dict] = []
+    stats = {"total": len(candidates), "accepted": 0, "held_unknown": 0,
+             "by_label": {}, "by_source": {}}
     for j in judged:
-        c = survivors[j["index"]]
-        if j["is_company"]:
-            accepted.append({
-                "candidate": c,
-                "company_name": j["company_name"],
-                "industry": j["industry"],
-                "confidence": j["confidence"],
-                "ai_verified": j.get("ai_verified", True),
-            })
-        elif j.get("is_competitor"):
-            stats["rejected_competitor"] += 1
-        else:
-            stats["rejected_ai"] += 1
+        c = candidates[j["index"]]
+        stats["by_label"][j["label"]] = stats["by_label"].get(j["label"], 0) + 1
+        stats["by_source"][j["source"]] = stats["by_source"].get(j["source"], 0) + 1
+        if j["label"] == "buyer":
+            accepted.append({"candidate": c, "company_name": _clean_title(c.title),
+                             "industry": "", "confidence": j["confidence"],
+                             "ai_verified": j["source"] != "provider_error",
+                             "reason": j["reason"]})
+        elif j["label"] == "unknown":
+            held.append({"candidate": c, "reason": j["reason"], "source": j["source"]})
 
     stats["accepted"] = len(accepted)
-    log.info("qualification_funnel", **stats)
-    return accepted, stats
+    stats["held_unknown"] = len(held)
+    log.info("classification_funnel", total=stats["total"], accepted=stats["accepted"],
+             held=stats["held_unknown"], by_label=stats["by_label"],
+             by_source=stats["by_source"])
+    return accepted, stats, held
