@@ -1,13 +1,14 @@
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.models.company import Company
 from app.models.scoring import LeadScore
+from app.models.signal import Signal
 from app.models.tenant import Organization
 
 
@@ -126,7 +127,7 @@ def score_trend(db: Session, organization_id: uuid.UUID, *, days: int = 30):
             func.count(LeadScore.id).label("n"),
         )
         .where(LeadScore.organization_id == organization_id)
-        .where(LeadScore.created_at >= datetime.utcnow() - timedelta(days=days))
+        .where(LeadScore.created_at >= datetime.now(timezone.utc) - timedelta(days=days))
         .group_by("d")
         .order_by("d")
     )
@@ -134,3 +135,67 @@ def score_trend(db: Session, organization_id: uuid.UUID, *, days: int = 30):
         {"date": d.strftime("%Y-%m-%d"), "avg_score": float(a or 0), "count": int(n)}
         for d, a, n in db.execute(sql).all()
     ]
+
+
+# ---- Phase 9: command-center intelligence ---------------------------------
+
+_GRADE_ORDER = ["A+", "A", "B", "C", "D", "F"]
+
+
+def score_distribution(db: Session, organization_id: uuid.UUID) -> list[dict]:
+    """Histogram of the LATEST grade per company (every grade bucket present).
+
+    Counts exactly one (latest) score per company via latest_score_ids_select,
+    so the bucket totals can never exceed the real scored-company count.
+    """
+    from app.services.scoring import latest_score_ids_select
+    latest_ids = latest_score_ids_select(organization_id).subquery()
+    rows = db.execute(
+        select(LeadScore.grade, func.count(LeadScore.id))
+        .where(LeadScore.id.in_(select(latest_ids.c.id)))
+        .group_by(LeadScore.grade)
+    ).all()
+    counts = {g: int(c) for g, c in rows}
+    return [{"grade": g, "count": counts.get(g, 0)} for g in _GRADE_ORDER]
+
+
+def signal_feed(db: Session, organization_id: uuid.UUID, *,
+                kinds: list[str] | None = None, hours: int | None = None,
+                limit: int = 12) -> list[dict]:
+    """Recent signals joined with company name for the dashboard feeds.
+
+    kinds filters by signal kind (e.g. ['funding'] or ['leadership_change']);
+    hours bounds recency (None = all-time, most-recent first).
+    """
+    stmt = (
+        select(Signal, Company.name, Company.domain)
+        .join(Company, Company.id == Signal.company_id)
+        .where(Signal.organization_id == organization_id)
+        .order_by(Signal.created_at.desc())
+    )
+    if kinds:
+        stmt = stmt.where(Signal.kind.in_(kinds))
+    if hours:
+        stmt = stmt.where(Signal.created_at >= datetime.now(timezone.utc) - timedelta(hours=hours))
+    rows = db.execute(stmt.limit(limit)).all()
+    return [
+        {
+            "id": s.id, "company_id": s.company_id, "company_name": name,
+            "company_domain": domain, "kind": s.kind, "label": s.label,
+            "severity": s.severity, "confidence": s.confidence,
+            "url": s.url, "created_at": s.created_at,
+        }
+        for s, name, domain in rows
+    ]
+
+
+def signal_counts_today(db: Session, organization_id: uuid.UUID,
+                        *, hours: int = 24) -> dict:
+    """Count of signals by kind in the last `hours` — drives the activity strip."""
+    rows = db.execute(
+        select(Signal.kind, func.count(Signal.id))
+        .where(Signal.organization_id == organization_id)
+        .where(Signal.created_at >= datetime.now(timezone.utc) - timedelta(hours=hours))
+        .group_by(Signal.kind)
+    ).all()
+    return {k: int(c) for k, c in rows}

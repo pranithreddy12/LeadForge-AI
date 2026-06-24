@@ -34,6 +34,8 @@ class ICP(Base, UUIDPk, Timestamps):
     buying_signals: Mapped[list[str]] = mapped_column(ARRAY(String), default=list)
     keywords: Mapped[list[str]] = mapped_column(ARRAY(String), default=list)
     excluded_keywords: Mapped[list[str]] = mapped_column(ARRAY(String), default=list)
+    # buyer-intent web search queries that surface TARGET BUYERS (not competitors)
+    search_queries: Mapped[list[str]] = mapped_column(ARRAY(String), default=list)
     tech_stack_required: Mapped[list[str]] = mapped_column(ARRAY(String), default=list)
     tech_stack_excluded: Mapped[list[str]] = mapped_column(ARRAY(String), default=list)
     weights: Mapped[dict] = mapped_column(JSONB, default=dict)

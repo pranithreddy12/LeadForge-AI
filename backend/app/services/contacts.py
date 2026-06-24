@@ -28,15 +28,22 @@ TARGET_TITLES = [
 
 def _seniority_for(title: str) -> str:
     t = (title or "").lower()
-    if any(k in t for k in ["ceo", "cto", "coo", "cfo", "chief"]):
+    # Gatekeeper/assistant roles must NOT be promoted to cxo by a 'chief' substring.
+    if "chief of staff" in t or "executive assistant" in t:
+        return "manager"
+    # C-level: whole-word acronyms or "chief … officer", plus founder.
+    if re.search(r"\b(ceo|cto|coo|cfo|cmo|ciso|cpo|cro)\b", t) \
+            or re.search(r"\bchief\b.*\bofficer\b", t) \
+            or re.search(r"\b(founder|co-?founder)\b", t):
         return "cxo"
-    if "founder" in t:
-        return "cxo"
-    if "vp" in t or "vice president" in t:
+    if re.search(r"\b(vp|svp|evp)\b", t) or "vice president" in t:
         return "vp"
-    if "head of" in t or "director" in t:
+    if "head of" in t or re.search(r"\bdirector\b", t):
         return "director"
-    if "manager" in t or "lead" in t:
+    # 'lead' as a whole word (Tech Lead, Team Lead) — but not "lead generation".
+    if "lead generation" in t:
+        return "ic"
+    if re.search(r"\bmanager\b", t) or re.search(r"\blead\b", t):
         return "manager"
     return "ic"
 
@@ -62,9 +69,18 @@ def _normalize_linkedin_url(url: str) -> str | None:
     return url.split("?")[0].rstrip("/")
 
 
+def _icp_personas(db: Session, company: Company) -> list[str]:
+    if not company.icp_id:
+        return []
+    from app.models.icp import ICP
+    icp = db.get(ICP, company.icp_id)
+    return (icp.buyer_personas or []) if icp else []
+
+
 def discover_contacts_for_company(db: Session, company: Company) -> list[Contact]:
     """Use Google site:linkedin.com/in/ queries and Hunter domain-search to find
     decision makers. Persists Contact rows (deduped per (company, linkedin or email))."""
+    personas = _icp_personas(db, company)
     new_contacts: list[Contact] = []
 
     # ---- 1. SERP-driven LinkedIn discovery -----------------------------------
@@ -80,7 +96,7 @@ def discover_contacts_for_company(db: Session, company: Company) -> list[Contact
             if len(name) < 3 or len(name) > 80:
                 continue
             new_contacts.append(_make_contact(company, name=name, title=title,
-                                              linkedin_url=li_url))
+                                              linkedin_url=li_url, personas=personas))
 
     # ---- 2. Hunter domain search (gets emails too) ---------------------------
     if company.domain:
@@ -93,6 +109,7 @@ def discover_contacts_for_company(db: Session, company: Company) -> list[Contact
                 company, name=name or "Unknown", title=title,
                 email=entry.get("value"),
                 linkedin_url=entry.get("linkedin"),
+                personas=personas,
             ))
 
     persisted = _persist(db, company, new_contacts)
@@ -101,8 +118,16 @@ def discover_contacts_for_company(db: Session, company: Company) -> list[Contact
 
 def _make_contact(company: Company, *, name: str, title: str,
                   email: str | None = None,
-                  linkedin_url: str | None = None) -> Contact:
+                  linkedin_url: str | None = None,
+                  personas: list[str] | None = None) -> Contact:
+    from app.services.contact_intelligence import compute_influence
     first, _, last = name.partition(" ")
+    seniority = _seniority_for(title)
+    department = _department_for(title)
+    influence, buying_power = compute_influence(
+        title=title, seniority=seniority, department=department,
+        buyer_personas=personas,
+    )
     return Contact(
         organization_id=company.organization_id,
         company_id=company.id,
@@ -110,8 +135,10 @@ def _make_contact(company: Company, *, name: str, title: str,
         first_name=first or None,
         last_name=last or None,
         title=title,
-        seniority=_seniority_for(title),
-        department=_department_for(title),
+        seniority=seniority,
+        department=department,
+        influence_score=influence,
+        buying_power=buying_power,
         email=email,
         linkedin_url=linkedin_url,
     )

@@ -58,6 +58,9 @@ def demo_icp(business_description: str) -> dict[str, Any]:
         "buying_signals": signals,
         "keywords": keywords,
         "excluded_keywords": ["intern", "student"],
+        # buyer-intent queries (signal-led, not service-led) so tier-1 discovery
+        # engages even in demo mode.
+        "search_queries": [f"{ind} {sig}" for ind in industries[:2] for sig in signals[:2]],
         "tech_stack_required": [],
         "tech_stack_excluded": [],
         "weights": {

@@ -59,18 +59,71 @@ def _normalize_name(name: str) -> str:
 
 
 def build_queries(icp: ICP, extra_keywords: list[str] | None = None) -> list[str]:
-    """Synthesize 4-8 queries from an ICP."""
-    kws = list(icp.keywords or [])[:8]
-    if extra_keywords:
-        kws.extend(extra_keywords)
+    """Buyer-intent queries, in priority order:
+      1. The ICP's stored `search_queries` (generated to find buyers, not competitors).
+      2. On-the-fly LLM generation from the ICP + seller's business description.
+      3. Deterministic templating fallback (when no LLM is available).
+    """
+    extra = list(extra_keywords or [])
+
+    # 1. Stored buyer-intent queries.
+    stored = [q for q in (getattr(icp, "search_queries", None) or []) if q]
+    if stored:
+        return _dedup(stored + extra)[:12]
+
+    # 2. Generate on the fly from the seller's offering + ICP.
+    try:
+        from app.ai.query_engine import generate_search_queries
+        business = ""
+        if icp.project is not None:
+            business = (icp.project.business_description or "")
+            if icp.project.target_offering:
+                business += f"\nOffering: {icp.project.target_offering}"
+        icp_dict = {
+            "industries": icp.industries, "buyer_personas": icp.buyer_personas,
+            "buying_signals": icp.buying_signals, "countries": icp.countries,
+            "keywords": icp.keywords,
+        }
+        generated = generate_search_queries(business_description=business, icp=icp_dict, limit=10)
+        if generated:
+            return _dedup(generated + extra)[:12]
+    except Exception as e:  # never let query-gen failure block discovery
+        log.info("query_gen_failed_fallback_template", error=str(e))
+
+    # 3. Deterministic templating fallback — intent-flavored, not service-flavored.
+    return _template_queries(icp, extra)
+
+
+def _dedup(items: list[str]) -> list[str]:
+    """Order-preserving de-duplication (case-insensitive)."""
+    seen: set[str] = set()
+    out: list[str] = []
+    for q in items:
+        k = q.strip().lower()
+        if k and k not in seen:
+            seen.add(k)
+            out.append(q)
+    return out
+
+
+def _template_queries(icp: ICP, extra_keywords: list[str]) -> list[str]:
+    """Deterministic fallback. Bias toward buying-signal phrasing over the
+    seller's service terms so we still lean at buyers, not competitors."""
+    kws = list(icp.keywords or [])[:6] + list(extra_keywords or [])
     countries = (icp.countries or [])[:2] or [""]
     industries = (icp.industries or [])[:3] or [""]
+    signals = (icp.buying_signals or [])[:2]
 
     queries: list[str] = []
     for ind in industries:
         for country in countries:
-            for kw in kws[:3]:
-                q = f"{ind} companies {kw} {country}".strip()
+            # signal-led queries find buyers in growth mode
+            for sig in signals:
+                q = f"{ind} {sig} {country}".strip()
+                if q and q not in queries:
+                    queries.append(q)
+            for kw in kws[:2]:
+                q = f"{ind} {kw} {country}".strip()
                 if q and q not in queries:
                     queries.append(q)
     if not queries:
@@ -100,7 +153,12 @@ def discover_via_search(icp: ICP, *, limit: int = 25,
             break
 
     candidates = list(raw.values())
-    accepted, stats = qualify_candidates(candidates)
+    seller = None
+    if icp.project is not None:
+        seller = icp.project.business_description or None
+        if seller and icp.project.target_offering:
+            seller += f"\nOffering: {icp.project.target_offering}"
+    accepted, stats = qualify_candidates(candidates, seller_description=seller)
     log.info("discovery_qualified", **stats)
 
     out: list[DiscoveredCompany] = []

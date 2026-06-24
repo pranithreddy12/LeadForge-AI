@@ -67,6 +67,7 @@ def generate(
         buying_signals=raw.get("buying_signals") or [],
         keywords=raw.get("keywords") or [],
         excluded_keywords=raw.get("excluded_keywords") or [],
+        search_queries=raw.get("search_queries") or [],
         tech_stack_required=raw.get("tech_stack_required") or [],
         tech_stack_excluded=raw.get("tech_stack_excluded") or [],
         weights=raw.get("weights") or {},
@@ -133,7 +134,7 @@ def refine(icp_id: uuid.UUID, instruction: str,
         "name", "summary", "industries", "sub_industries", "countries", "regions",
         "employee_min", "employee_max", "revenue_min_usd", "revenue_max_usd",
         "buyer_personas", "buying_signals", "keywords", "excluded_keywords",
-        "tech_stack_required", "tech_stack_excluded", "weights",
+        "search_queries", "tech_stack_required", "tech_stack_excluded", "weights",
     ]:
         if k in refined:
             setattr(row, k, refined[k])

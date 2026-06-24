@@ -37,6 +37,8 @@ class ContactOut(BaseModel):
     title: str | None
     seniority: str | None
     department: str | None
+    influence_score: int = 0
+    buying_power: str | None = None
     email: str | None
     email_status: str | None
     email_confidence: int | None

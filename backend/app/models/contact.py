@@ -29,6 +29,9 @@ class Contact(Base, UUIDPk, Timestamps):
     title: Mapped[str | None] = mapped_column(String(200), index=True)
     seniority: Mapped[str | None] = mapped_column(String(40))  # cxo | vp | director | manager | ic
     department: Mapped[str | None] = mapped_column(String(80))
+    influence_score: Mapped[int] = mapped_column(Integer, default=0, server_default="0")  # 0..100
+    buying_power: Mapped[str | None] = mapped_column(String(20))
+    # decision_maker | influencer | gatekeeper | evaluator | end_user
     email: Mapped[str | None] = mapped_column(String(320), index=True)
     email_status: Mapped[str | None] = mapped_column(String(20))  # valid | risky | invalid | unknown
     email_confidence: Mapped[int | None] = mapped_column(Integer)

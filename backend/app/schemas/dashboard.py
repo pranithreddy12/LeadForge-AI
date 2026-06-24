@@ -32,3 +32,21 @@ class ScoreTrendPoint(BaseModel):
     date: str  # YYYY-MM-DD
     avg_score: float
     count: int
+
+
+class GradeBucket(BaseModel):
+    grade: str
+    count: int
+
+
+class SignalFeedItem(BaseModel):
+    id: str
+    company_id: str
+    company_name: str
+    company_domain: str | None = None
+    kind: str
+    label: str
+    severity: float
+    confidence: float
+    url: str | None = None
+    created_at: str

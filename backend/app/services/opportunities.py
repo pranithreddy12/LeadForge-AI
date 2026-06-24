@@ -10,33 +10,17 @@ from app.models.scoring import LeadScore
 from app.models.signal import Signal
 
 
-def _latest_score_subquery(organization_id: uuid.UUID):
-    """Subquery: the most recent LeadScore per company for this org."""
-    return (
-        select(
-            LeadScore.company_id,
-            func.max(LeadScore.created_at).label("max_created"),
-        )
-        .where(LeadScore.organization_id == organization_id)
-        .group_by(LeadScore.company_id)
-        .subquery()
-    )
-
-
 def list_opportunities(db: Session, *, organization_id: uuid.UUID,
                        min_score: int = 0, limit: int = 50, offset: int = 0) -> list[dict]:
     """Companies joined with their latest score + opportunity reasoning,
     ranked by score descending. This is the intelligence view."""
-    latest = _latest_score_subquery(organization_id)
+    from app.services.scoring import latest_score_ids_select
+    latest_ids = latest_score_ids_select(organization_id).subquery()
 
     rows = db.execute(
         select(Company, LeadScore)
-        .join(latest, latest.c.company_id == Company.id)
-        .join(
-            LeadScore,
-            (LeadScore.company_id == latest.c.company_id)
-            & (LeadScore.created_at == latest.c.max_created),
-        )
+        .join(LeadScore, LeadScore.company_id == Company.id)
+        .where(LeadScore.id.in_(select(latest_ids.c.id)))
         .where(Company.organization_id == organization_id)
         .where(LeadScore.score >= min_score)
         .order_by(LeadScore.score.desc())
@@ -79,12 +63,11 @@ def list_opportunities(db: Session, *, organization_id: uuid.UUID,
 
 
 def opportunity_stats(db: Session, *, organization_id: uuid.UUID) -> dict:
-    latest = _latest_score_subquery(organization_id)
+    from app.services.scoring import latest_score_ids_select
+    latest_ids = latest_score_ids_select(organization_id).subquery()
     rows = db.execute(
         select(LeadScore.grade, LeadScore.score)
-        .join(latest, (LeadScore.company_id == latest.c.company_id)
-              & (LeadScore.created_at == latest.c.max_created))
-        .where(LeadScore.organization_id == organization_id)
+        .where(LeadScore.id.in_(select(latest_ids.c.id)))
     ).all()
     if not rows:
         return {"total_scored": 0, "hot": 0, "warm": 0, "cold": 0, "avg_score": 0.0}

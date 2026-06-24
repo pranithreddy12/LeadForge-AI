@@ -23,6 +23,7 @@ ICP_JSON_SCHEMA: dict = {
         "buying_signals": {"type": "array", "items": {"type": "string"}},
         "keywords": {"type": "array", "items": {"type": "string"}},
         "excluded_keywords": {"type": "array", "items": {"type": "string"}},
+        "search_queries": {"type": "array", "items": {"type": "string"}},
         "tech_stack_required": {"type": "array", "items": {"type": "string"}},
         "tech_stack_excluded": {"type": "array", "items": {"type": "string"}},
         "weights": {
@@ -51,7 +52,7 @@ ICP_JSON_SCHEMA: dict = {
         "name", "summary", "industries", "sub_industries", "countries", "regions",
         "employee_min", "employee_max", "revenue_min_usd", "revenue_max_usd",
         "buyer_personas", "buying_signals", "keywords", "excluded_keywords",
-        "tech_stack_required", "tech_stack_excluded", "weights",
+        "search_queries", "tech_stack_required", "tech_stack_excluded", "weights",
     ],
 }
 

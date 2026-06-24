@@ -9,6 +9,7 @@ import type { Contact, Page as PageT } from "@/lib/types";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import { InfluenceBar, BuyingPowerBadge } from "@/components/influence";
 
 export default function ContactsPage() {
   const [q, setQ] = useState("");
@@ -50,7 +51,8 @@ export default function ContactsPage() {
               <tr className="text-left text-xs text-muted-foreground border-b border-white/5">
                 <th className="py-2 px-4">Name</th>
                 <th>Title</th>
-                <th>Seniority</th>
+                <th>Influence</th>
+                <th>Buying power</th>
                 <th>Email</th>
                 <th>Status</th>
                 <th className="pr-4 text-right">LinkedIn</th>
@@ -61,7 +63,8 @@ export default function ContactsPage() {
                 <tr key={p.id} className="border-b border-white/5 hover:bg-white/[0.02]">
                   <td className="py-2.5 px-4 font-medium">{p.name}</td>
                   <td className="text-muted-foreground">{p.title}</td>
-                  <td className="text-muted-foreground">{p.seniority || "—"}</td>
+                  <td className="pr-4"><InfluenceBar score={p.influence_score} /></td>
+                  <td><BuyingPowerBadge value={p.buying_power} /></td>
                   <td className="text-muted-foreground">{p.email || "—"}</td>
                   <td>
                     {p.email_status && (
@@ -78,7 +81,7 @@ export default function ContactsPage() {
                 </tr>
               ))}
               {filtered.length === 0 && (
-                <tr><td colSpan={6} className="py-10 text-center text-sm text-muted-foreground">
+                <tr><td colSpan={7} className="py-10 text-center text-sm text-muted-foreground">
                   No contacts yet.
                 </td></tr>
               )}

@@ -25,7 +25,7 @@ from app.core.logging import get_logger
 
 log = get_logger(__name__)
 
-Provider = Literal["openai", "gemini", "demo"]
+Provider = Literal["openai", "mistral", "gemini", "demo"]
 
 # Transient provider errors worth retrying before giving up. Gemini's free tier
 # returns 503 "high demand" and 429 rate-limit fairly often; both clear quickly.
@@ -121,44 +121,63 @@ def _is_openai_configured() -> bool:
     return k.startswith("sk-") and len(k) > 30 and not k.endswith("xxx")
 
 
+def _is_mistral_configured() -> bool:
+    k = settings.mistral_api_key or ""
+    return len(k) > 20 and not k.endswith("xxx") and not k.endswith("placeholder")
+
+
 def _is_gemini_configured() -> bool:
     k = settings.gemini_api_key or ""
     return len(k) > 20 and not k.endswith("xxx") and not k.endswith("placeholder")
 
 
 def _provider() -> Provider:
+    # Priority: a real OpenAI key wins, then Mistral (explicitly chosen for
+    # testing), then Gemini, then demo. Mistral sits above Gemini so adding a
+    # Mistral key takes over even if a (possibly quota-exhausted) Gemini key
+    # is still present.
     if _is_openai_configured():
         return "openai"
+    if _is_mistral_configured():
+        return "mistral"
     if _is_gemini_configured():
         return "gemini"
     return "demo"
 
 
+# providers reached through the OpenAI-compatible chat endpoint that do NOT
+# enforce strict json_schema — we send json_object + schema-in-prompt instead.
+_JSON_OBJECT_PROVIDERS = {"gemini", "mistral"}
+
+
 @lru_cache(maxsize=1)
 def client() -> OpenAI:
     p = _provider()
+    if p == "mistral":
+        return OpenAI(api_key=settings.mistral_api_key,
+                      base_url=settings.mistral_base_url, timeout=60.0, max_retries=2)
     if p == "gemini":
-        return OpenAI(
-            api_key=settings.gemini_api_key,
-            base_url=settings.gemini_base_url,
-            timeout=60.0,
-            max_retries=2,
-        )
+        return OpenAI(api_key=settings.gemini_api_key,
+                      base_url=settings.gemini_base_url, timeout=60.0, max_retries=2)
     return OpenAI(api_key=settings.openai_api_key, timeout=60.0, max_retries=2)
 
 
 def _model_reasoning() -> str:
-    return (
-        settings.gemini_model_reasoning if _provider() == "gemini"
-        else settings.openai_model_reasoning
-    )
+    p = _provider()
+    if p == "mistral":
+        return settings.mistral_model_reasoning
+    if p == "gemini":
+        return settings.gemini_model_reasoning
+    return settings.openai_model_reasoning
 
 
 def _model_fast() -> str:
-    return (
-        settings.gemini_model_fast if _provider() == "gemini"
-        else settings.openai_model_fast
-    )
+    p = _provider()
+    if p == "mistral":
+        return settings.mistral_model_fast
+    if p == "gemini":
+        return settings.gemini_model_fast
+    return settings.openai_model_fast
 
 
 def _model_embedding() -> str:
@@ -200,7 +219,9 @@ def _demo_for_schema(schema_name: str, user: str) -> dict[str, Any]:
         return demo_data.demo_opportunity({"name": "this account"})
     if sn == "outreach":
         return demo_data.demo_outreach({"name": "this account"}, None, "email", "concise")
-    return {"demo": True}
+    # No demo fixture for this schema (e.g. AccountResearch). Signal "unavailable"
+    # so callers persist NOTHING rather than a hollow/empty row.
+    return {"_provider_error": True}
 
 
 # ---- Public API ------------------------------------------------------------
@@ -227,8 +248,10 @@ def complete_json(
         log.info("llm_demo_mode", schema=schema_name)
         return _demo_for_schema(schema_name, user)
 
-    if p == "gemini":
-        # Append the schema as an explicit instruction so Gemini knows the shape.
+    if p in _JSON_OBJECT_PROVIDERS:
+        # Gemini/Mistral: append the schema as an explicit instruction (their
+        # OpenAI-compat layer doesn't enforce strict json_schema) and ask for a
+        # plain JSON object.
         sys_with_schema = (
             f"{system}\n\n"
             f"Return ONLY a JSON object matching this JSON Schema (no markdown, no commentary):\n"
@@ -306,8 +329,8 @@ def stream_chat(messages: list[dict], model: str | None = None):
     """Generator yielding token strings — for SSE chat endpoints."""
     if _provider() == "demo":
         msg = (
-            "[demo mode] No LLM key configured. Set OPENAI_API_KEY or "
-            "GEMINI_API_KEY to enable real chat."
+            "[demo mode] No LLM key configured. Set OPENAI_API_KEY, "
+            "MISTRAL_API_KEY, or GEMINI_API_KEY to enable real chat."
         )
         for word in msg.split():
             yield word + " "
@@ -328,7 +351,11 @@ def embed(texts: list[str]) -> list[list[float]]:
     if not texts:
         return []
     p = _provider()
-    if p == "demo":
+    # Mistral's embedding model is 1024-dim, which won't fit our 1536-dim vector
+    # column. Use the deterministic local embedding so semantic search keeps
+    # working at the right dimension without a schema migration. (Chat/scoring
+    # quality is unaffected — only semantic similarity is lower-fidelity.)
+    if p in ("demo", "mistral"):
         return [demo_data.demo_embedding(t, settings.openai_embedding_dim) for t in texts]
 
     kwargs: dict[str, Any] = {"model": _model_embedding(), "input": texts}

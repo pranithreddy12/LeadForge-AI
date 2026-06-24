@@ -80,6 +80,8 @@ export interface Contact {
   title?: string | null;
   seniority?: string | null;
   department?: string | null;
+  influence_score: number;
+  buying_power?: "decision_maker" | "influencer" | "gatekeeper" | "evaluator" | "end_user" | null;
   email?: string | null;
   email_status?: "valid" | "risky" | "invalid" | "unknown" | null;
   email_confidence?: number | null;
@@ -142,6 +144,21 @@ export interface DashboardSummary {
   avg_score: KPI;
   conversion_rate: KPI;
   revenue: KPI;
+}
+
+export interface AccountResearch {
+  id: ID;
+  company_id: ID;
+  summary?: string | null;
+  pain_points: string[];
+  current_initiatives: string[];
+  growth_signals: string[];
+  key_facts: string[];
+  recommended_pitch?: string | null;
+  suggested_contact_title?: string | null;
+  confidence: number;
+  sources: { title?: string; url?: string; kind?: string }[];
+  created_at: string;
 }
 
 export interface OpportunityCard {

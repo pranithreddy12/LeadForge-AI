@@ -18,6 +18,8 @@ celery = Celery(
         "app.workers.workflows",
         "app.workers.embeddings",
         "app.workers.enrichment",
+        "app.workers.research",
+        "app.workers.inbox",
     ],
 )
 
@@ -39,6 +41,7 @@ celery.conf.update(
         "app.workers.outreach.*": {"queue": "outreach"},
         "app.workers.embeddings.*": {"queue": "embeddings"},
         "app.workers.enrichment.*": {"queue": "discovery"},
+        "app.workers.research.*": {"queue": "discovery"},
     },
 )
 
@@ -59,5 +62,9 @@ celery.conf.beat_schedule = {
     "enrich-pending-every-15m": {
         "task": "app.workers.enrichment.enrich_pending",
         "schedule": crontab(minute="*/15"),
+    },
+    "poll-email-replies-every-5m": {
+        "task": "app.workers.inbox.poll_replies",
+        "schedule": crontab(minute="*/5"),
     },
 }

@@ -12,8 +12,10 @@ from app.models.icp import ICP
 from app.models.tenant import Organization
 from app.schemas.common import Page
 from app.schemas.company import CompanyCreate, CompanyDiscoveryRequest, CompanyOut, CompanyUpdate
+from app.schemas.research import AccountResearchOut
 from app.services.discovery import discover_via_search, persist_candidates
 from app.services.enrichment import enrich_company
+from app.services.research import latest_research, research_company
 from app.workers.discovery import discover_companies_task
 from app.workers.enrichment import enrich_batch_task
 
@@ -147,3 +149,44 @@ def enrich_many(db: Session = Depends(get_db), org: Organization = Depends(curre
                 limit: int = 25):
     task = enrich_batch_task.delay(str(org.id), None, limit)
     return {"task_id": task.id, "status": "queued"}
+
+
+@router.post("/{company_id}/research")
+def research(company_id: uuid.UUID, db: Session = Depends(get_db),
+             org: Organization = Depends(current_org), sync: bool = True):
+    """Run the AI Research Agent on an account.
+
+    sync=true (default): runs inline and returns the brief (the LLM call respects
+    the circuit breaker, so it fails fast when the provider is down). sync=false:
+    dispatches to the worker and returns 202 + task_id — use this to avoid long
+    request times under provider latency; poll GET /research for the result.
+    """
+    from app.core.rate_limit import hit
+    hit(f"research:{org.id}", limit=20, window_seconds=60)
+
+    c = db.get(Company, company_id)
+    if not c or c.organization_id != org.id:
+        raise NotFound("Company")
+
+    if not sync:
+        from app.workers.research import research_company_task
+        task = research_company_task.delay(str(org.id), str(company_id))
+        return {"task_id": task.id, "status": "queued"}
+
+    row = research_company(db, organization_id=org.id, company_id=company_id)
+    if row is None:
+        from app.core.errors import AIUnavailable
+        raise AIUnavailable("Research could not run — AI provider unavailable. Try again shortly.")
+    return AccountResearchOut.model_validate(row)
+
+
+@router.get("/{company_id}/research", response_model=AccountResearchOut)
+def get_research(company_id: uuid.UUID, db: Session = Depends(get_db),
+                 org: Organization = Depends(current_org)):
+    c = db.get(Company, company_id)
+    if not c or c.organization_id != org.id:
+        raise NotFound("Company")
+    row = latest_research(db, company_id)
+    if not row:
+        raise NotFound("Research")
+    return row

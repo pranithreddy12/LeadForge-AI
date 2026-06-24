@@ -68,6 +68,22 @@ def _step_discover(db, org_id: uuid.UUID, ctx: dict, config: dict) -> dict:
     return {"company_ids": company_ids, "delta": len(rows)}
 
 
+def _step_enrich(db, org_id: uuid.UUID, ctx: dict, _config: dict) -> dict:
+    """Fill firmographics (employee_count, revenue, funding, HQ) before scoring,
+    so size/fit filtering has real data to work with."""
+    from app.services.enrichment import enrich_company
+    n = 0
+    for cid in ctx.get("company_ids", []):
+        c = db.get(Company, uuid.UUID(cid))
+        if c:
+            try:
+                enrich_company(db, c)
+                n += 1
+            except Exception as e:
+                log.warning("enrich_failed", error=str(e), company_id=cid)
+    return {"enriched": n}
+
+
 def _step_signals(db, org_id: uuid.UUID, ctx: dict, _config: dict) -> dict:
     n = 0
     for cid in ctx.get("company_ids", []):
@@ -129,24 +145,115 @@ def _step_outreach(db, org_id: uuid.UUID, ctx: dict, config: dict) -> dict:
     channel = config.get("channel", "email")
     n = 0
     for cid in ctx.get("company_ids", []):
-        draft_outreach_for_company.delay(str(org_id), cid, channel=channel)
+        # Run synchronously (not .delay) so drafts exist in the DB before a
+        # following send_emails step runs in the same workflow.
+        draft_outreach_for_company(str(org_id), cid, channel=channel)
         n += 1
-    return {"drafted_queued": n}
+    return {"drafted": n}
+
+
+def _step_send_emails(db, org_id: uuid.UUID, ctx: dict, config: dict) -> dict:
+    """Send the draft emails for this workflow's companies via Gmail."""
+    from app.models.campaign import EmailMessage
+    from app.services.email_sender import send_email_message
+    company_ids = [uuid.UUID(c) for c in ctx.get("company_ids", [])]
+    if not company_ids:
+        return {"sent": 0}
+    drafts = db.execute(
+        select(EmailMessage).where(
+            EmailMessage.organization_id == org_id,
+            EmailMessage.company_id.in_(company_ids),
+            EmailMessage.status == "draft",
+            EmailMessage.channel == "email",
+        )
+    ).scalars().all()
+    sent = 0
+    for m in drafts:
+        if send_email_message(db, m).get("sent"):
+            sent += 1
+    return {"sent": sent, "drafts": len(drafts)}
+
+
+def _step_notify_telegram(db, org_id: uuid.UUID, ctx: dict, config: dict) -> dict:
+    """Send a Telegram summary of this workflow run."""
+    from app.models.campaign import EmailMessage
+    from app.models.company import Company
+    from app.models.scoring import LeadScore
+    from app.services import telegram
+
+    company_ids = [uuid.UUID(c) for c in ctx.get("company_ids", [])]
+    found = len(company_ids)
+    scored = hot = sent = drafted = 0
+    top: list[str] = []
+    if company_ids:
+        rows = db.execute(
+            select(Company.name, LeadScore.grade, LeadScore.score)
+            .join(LeadScore, LeadScore.company_id == Company.id)
+            .where(Company.id.in_(company_ids))
+            .order_by(LeadScore.score.desc())
+        ).all()
+        scored = len(rows)
+        hot = sum(1 for _, g, _ in rows if g in ("A+", "A", "B"))
+        top = [f"{n} — {g} ({s})" for n, g, s in rows[:5]]
+        drafted = db.execute(
+            select(func.count(EmailMessage.id)).where(
+                EmailMessage.organization_id == org_id,
+                EmailMessage.company_id.in_(company_ids),
+            )
+        ).scalar_one() or 0
+        sent = db.execute(
+            select(func.count(EmailMessage.id)).where(
+                EmailMessage.organization_id == org_id,
+                EmailMessage.company_id.in_(company_ids),
+                EmailMessage.status == "sent",
+            )
+        ).scalar_one() or 0
+    ok = telegram.notify_daily_summary(found=found, scored=scored, hot=hot,
+                                       drafted=drafted, sent=sent, top=top)
+    return {"telegram_sent": ok, "found": found, "hot": hot}
 
 
 def _step_filter(db, org_id: uuid.UUID, ctx: dict, config: dict) -> dict:
-    """`config` can include min_score, grades, industries, country, pipeline_stage."""
+    """Filter the working set of companies.
+
+    config keys: min_score, grades, industries, country, employee_min,
+    employee_max, and `enforce_icp_size` (bool) which pulls the size band from
+    the run's ICP. Size enforcement hard-drops grossly off-size accounts (e.g. a
+    27k-employee giant or a 9-person shop for a 50–1000 ICP) regardless of score
+    — being out-of-band is a disqualifier, not just a low score.
+    """
     from app.models.scoring import LeadScore
     company_ids = ctx.get("company_ids") or []
     if not company_ids:
         return {"company_ids": []}
-    rows = db.execute(
-        select(Company, LeadScore.score, LeadScore.grade)
-        .outerjoin(LeadScore, LeadScore.company_id == Company.id)
-        .where(Company.id.in_([uuid.UUID(c) for c in company_ids]))
+
+    # Resolve size bounds (explicit config wins; else the ICP band if requested).
+    emp_min = config.get("employee_min")
+    emp_max = config.get("employee_max")
+    if config.get("enforce_icp_size"):
+        icp_id = config.get("icp_id") or ctx.get("icp_id")
+        icp = db.get(ICP, uuid.UUID(str(icp_id))) if icp_id else None
+        if icp:
+            emp_min = emp_min if emp_min is not None else icp.employee_min
+            emp_max = emp_max if emp_max is not None else icp.employee_max
+
+    # Latest score per company (most recent row wins) — avoids the duplicate-row
+    # fan-out an unordered outerjoin produced when a company was re-scored.
+    latest: dict[uuid.UUID, tuple[int | None, str | None]] = {}
+    score_rows = db.execute(
+        select(LeadScore.company_id, LeadScore.score, LeadScore.grade)
+        .where(LeadScore.company_id.in_([uuid.UUID(c) for c in company_ids]))
+        .order_by(LeadScore.company_id, LeadScore.created_at.desc())
     ).all()
-    out = []
-    for company, score, grade in rows:
+    for cid, score, grade in score_rows:
+        latest.setdefault(cid, (score, grade))
+
+    out: list[str] = []
+    for cid in company_ids:
+        company = db.get(Company, uuid.UUID(cid))
+        if not company:
+            continue
+        score, grade = latest.get(company.id, (None, None))
         if (m := config.get("min_score")) is not None and (score or 0) < int(m):
             continue
         if (g := config.get("grades")) and grade not in g:
@@ -155,6 +262,13 @@ def _step_filter(db, org_id: uuid.UUID, ctx: dict, config: dict) -> dict:
             continue
         if (cy := config.get("country")) and company.country != cy:
             continue
+        # Size band — only enforced when the company's size is known (enriched).
+        emp = company.employee_count or 0
+        if emp > 0:
+            if emp_min is not None and emp < int(emp_min):
+                continue
+            if emp_max is not None and emp > int(emp_max):
+                continue
         out.append(str(company.id))
     return {"company_ids": out, "passed": len(out)}
 
@@ -190,6 +304,7 @@ def _step_wait(_db, _org_id, _ctx, config) -> dict:
 
 HANDLERS = {
     "discover_companies": _step_discover,
+    "enrich": _step_enrich,
     "detect_signals": _step_signals,
     "find_contacts": _step_contacts,
     "validate_emails": _step_validate_emails,
@@ -197,6 +312,8 @@ HANDLERS = {
     "generate_outreach": _step_outreach,
     "filter": _step_filter,
     "add_to_crm": _step_add_to_crm,
+    "send_emails": _step_send_emails,
+    "notify_telegram": _step_notify_telegram,
     "webhook": _step_webhook,
     "wait": _step_wait,
 }

@@ -2,17 +2,18 @@
 
 import { useParams } from "next/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Activity, Building2, DollarSign, ExternalLink, Globe, Layers, Loader2, MapPin, MessageSquare, Send, Sparkles, TrendingUp, Users } from "lucide-react";
+import { Activity, Building2, DollarSign, ExternalLink, Globe, Layers, Lightbulb, Loader2, MapPin, MessageSquare, Microscope, Rocket, Send, Sparkles, Target, TrendingUp, Users } from "lucide-react";
 import { fmtMoney } from "@/lib/utils";
 import { toast } from "sonner";
 
 import { api } from "@/lib/api";
-import type { Company, Contact, LeadScore, Page as PageT, Signal } from "@/lib/types";
+import type { AccountResearch, Company, Contact, LeadScore, Page as PageT, Signal } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { ScorePill } from "@/components/score-pill";
+import { InfluenceBar, BuyingPowerBadge } from "@/components/influence";
 import { timeAgo } from "@/lib/utils";
 
 export default function LeadDetailPage() {
@@ -171,12 +172,17 @@ export default function LeadDetailPage() {
         </Card>
       </div>
 
-      <Tabs defaultValue="signals">
+      <Tabs defaultValue="research">
         <TabsList>
+          <TabsTrigger value="research">Research</TabsTrigger>
           <TabsTrigger value="signals">Signals ({signals.data?.total ?? 0})</TabsTrigger>
           <TabsTrigger value="contacts">Contacts ({contacts.data?.total ?? 0})</TabsTrigger>
           <TabsTrigger value="outreach">Outreach</TabsTrigger>
         </TabsList>
+
+        <TabsContent value="research">
+          <ResearchPanel companyId={id} />
+        </TabsContent>
 
         <TabsContent value="signals">
           <Card>
@@ -215,7 +221,7 @@ export default function LeadDetailPage() {
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="text-left text-xs text-muted-foreground border-b border-white/5">
-                      <th className="py-2 px-5">Name</th><th>Title</th><th>Email</th><th>Status</th><th></th>
+                      <th className="py-2 px-5">Name</th><th>Title</th><th>Influence</th><th>Buying power</th><th>Email</th><th></th>
                     </tr>
                   </thead>
                   <tbody>
@@ -223,10 +229,12 @@ export default function LeadDetailPage() {
                       <tr key={p.id} className="border-b border-white/5">
                         <td className="py-2.5 px-5 font-medium">{p.name}</td>
                         <td className="text-muted-foreground">{p.title}</td>
-                        <td className="text-muted-foreground">{p.email || "—"}</td>
-                        <td>
+                        <td className="pr-4"><InfluenceBar score={p.influence_score} /></td>
+                        <td><BuyingPowerBadge value={p.buying_power} /></td>
+                        <td className="text-muted-foreground">
+                          {p.email || "—"}
                           {p.email_status && (
-                            <Badge variant={
+                            <Badge className="ml-1" variant={
                               p.email_status === "valid" ? "success" :
                               p.email_status === "risky" ? "warn" :
                               p.email_status === "invalid" ? "danger" : "default"
@@ -306,6 +314,99 @@ function FirmographicsCard({ c }: { c: Company }) {
         )}
       </CardContent>
     </Card>
+  );
+}
+
+
+function ResearchPanel({ companyId }: { companyId: string }) {
+  const qc = useQueryClient();
+  const existing = useQuery({
+    queryKey: ["research", companyId],
+    queryFn: () => api.get<AccountResearch>(`/companies/${companyId}/research`).catch(() => null),
+  });
+  const run = useMutation({
+    mutationFn: () => api.post<AccountResearch>(`/companies/${companyId}/research`),
+    onSuccess: () => { toast.success("Research complete"); qc.invalidateQueries({ queryKey: ["research", companyId] }); },
+    onError: (e: any) => toast.error(e.message || "Research unavailable"),
+  });
+
+  const r = run.data || existing.data;
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center justify-between">
+          <span className="flex items-center gap-2"><Microscope className="h-4 w-4 text-brand-400" /> AI Account Research</span>
+          <Button size="sm" variant="glow" onClick={() => run.mutate()} disabled={run.isPending}>
+            {run.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Microscope className="h-3.5 w-3.5" />}
+            {r ? "Re-research" : "Research Account"}
+          </Button>
+        </CardTitle>
+        {r && <CardDescription>Generated {timeAgo(r.created_at)} · confidence {r.confidence}/100 · {r.sources?.length || 0} sources</CardDescription>}
+      </CardHeader>
+      <CardContent className="space-y-5">
+        {!r && !run.isPending && (
+          <div className="text-sm text-muted-foreground flex items-center gap-2">
+            <Microscope className="h-4 w-4" />
+            Run a deep-research pass: website, news, funding, hiring, and tech — synthesized into an actionable brief.
+          </div>
+        )}
+        {run.isPending && (
+          <div className="text-sm text-muted-foreground flex items-center gap-2">
+            <Loader2 className="h-4 w-4 animate-spin" /> Researching across the web…
+          </div>
+        )}
+        {r && (
+          <>
+            {r.summary && (
+              <p className="text-sm leading-relaxed">{r.summary}</p>
+            )}
+            <ResearchList icon={Lightbulb} title="Pain points" items={r.pain_points} tone="amber" />
+            <ResearchList icon={Rocket} title="Current initiatives" items={r.current_initiatives} tone="sky" />
+            <ResearchList icon={TrendingUp} title="Growth signals" items={r.growth_signals} tone="emerald" />
+            {r.recommended_pitch && (
+              <div className="rounded-lg border border-brand-500/20 bg-brand-500/5 p-4">
+                <div className="text-[11px] uppercase tracking-wider text-brand-300 mb-1.5 flex items-center gap-1">
+                  <Target className="h-3 w-3" /> Recommended pitch
+                  {r.suggested_contact_title && <span className="text-muted-foreground normal-case">→ {r.suggested_contact_title}</span>}
+                </div>
+                <p className="text-sm leading-relaxed">{r.recommended_pitch}</p>
+              </div>
+            )}
+            {r.sources && r.sources.length > 0 && (
+              <div className="border-t border-white/5 pt-3">
+                <div className="text-[11px] uppercase tracking-wider text-muted-foreground mb-1.5">Sources</div>
+                <div className="flex flex-col gap-1">
+                  {r.sources.slice(0, 10).map((s, i) => (
+                    <a key={i} href={s.url} target="_blank" rel="noreferrer"
+                       className="text-xs text-brand-300 hover:underline truncate">↗ {s.title || s.url}</a>
+                  ))}
+                </div>
+              </div>
+            )}
+          </>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function ResearchList({ icon: Icon, title, items, tone }: {
+  icon: any; title: string; items: string[]; tone: "amber" | "sky" | "emerald";
+}) {
+  if (!items || items.length === 0) return null;
+  const color = { amber: "text-amber-400", sky: "text-sky-400", emerald: "text-emerald-400" }[tone];
+  return (
+    <div>
+      <div className={`text-[11px] uppercase tracking-wider text-muted-foreground mb-1.5 flex items-center gap-1`}>
+        <Icon className={`h-3 w-3 ${color}`} /> {title}
+      </div>
+      <ul className="space-y-1">
+        {items.map((it, i) => (
+          <li key={i} className="flex gap-2 text-sm"><span className={color}>•</span><span>{it}</span></li>
+        ))}
+      </ul>
+    </div>
   );
 }
 

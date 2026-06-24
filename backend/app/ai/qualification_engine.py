@@ -40,19 +40,36 @@ _JUNK_DOMAINS = {
     "ycombinator.com", "techstars.com", "500.co", "techcrunch.com",
     "us-fintech.com", "fintechmagazine.com", "growjo.com", "owler.com",
     "zoominfo.com", "apollo.io", "rocketreach.co", "leadiq.com",
+    # startup/funding directories & listicle sites
+    "tracxn.com", "topstartups.io", "growthlist.co", "startups.gallery",
+    "crunchbase.com", "pitchbook.com", "cbinsights.com", "dealroom.co",
+    "failory.com", "eu-startups.com", "startupranking.com", "f6s.com",
+    "seedtable.com", "startuplist.co", "betalist.com", "startupblink.com",
 }
 
 # Title patterns that signal a content/listicle/explainer page, not a company.
+# DELIBERATELY HIGH-PRECISION: these only fire on clearly-content phrasings. Bare
+# single-word tokens (guide, news, blog, jobs, pricing, faq, "<noun> for/to")
+# were removed because they collide with real brand names ("Insurance Guide Inc",
+# "Gusto - Payroll Software for Small Businesses"). Ambiguous cases are left for
+# the AI classifier — false-rejecting a real buyer is worse than one extra LLM row.
+# Content surfaces (blog/news/jobs/careers) are still caught by path + subdomain.
 _JUNK_TITLE_PATTERNS = [
-    r"^\s*what\s+is\b", r"^\s*how\s+to\b", r"^\s*why\b", r"\bguide\b",
+    r"^\s*what\s+is\b", r"^\s*how\s+to\b", r"^\s*why\s+\w",
+    # listicles — all anchored on top/best/N so they can't match plain brands
     r"\btop\s+\d+\b",
-    r"\bbest\s+[\w&/\s]*?(companies|services|solutions|tools|platforms|software|vendors|providers|firms|agencies)\b",
-    r"\b(companies|services|tools|platforms|software|vendors|providers)\s+(for|to)\b",
-    r"\b\d+\s+(best|top)\b", r"\bvs\.?\b", r"\balternatives?\b", r"\bcomparison\b",
-    r"\breview(s|ed)?\b", r"\branked\b", r"\blist of\b", r"\bexamples?\b",
-    r"\b(ultimate|complete|beginner'?s)\s+guide\b", r"\bblog\b", r"\bnews\b",
-    r"\bjobs?\b\s*(now hiring|openings?)?", r"\bhiring\b", r"\bcareers?\b",
-    r"\bdefinition\b", r"\btutorial\b", r"\bfaq\b", r"\bpricing\b",
+    r"\btop\s+[\w&/\s]*?(startups?|companies|firms|tools|platforms|vendors|providers|software|services|solutions)\b",
+    r"\bbest\s+[\w&/\s]*?(startups?|companies|services|solutions|tools|platforms|software|vendors|providers|firms|agencies)\b",
+    r"\b\d[\d,]*\+?\s+[\w&/\s]*?(startups?|companies)\b",   # "11,130+ Series A Startups"
+    r"\b(startups?|companies|funding)\s+(list|directory|database|rankings?)\b",
+    r"\bways?\s+to\b",                                      # "Seven ways to finance…"
+    r"\blist of\b",
+    # comparison/alternatives are listicle signals only in anchored forms
+    r"\b\w+\s+vs\.?\s+\w+\b",                               # "Asana vs Monday"
+    r"\balternatives?\s+(to|for)\b",                        # "alternatives to X"
+    # explainer "guide" only when anchored — bare "guide" collides with brands
+    r"\b(ultimate|complete|beginner'?s|step[- ]by[- ]step)\s+guide\b",
+    r"\bguide\s+to\b",                                      # "Guide to fundraising"
 ]
 
 # URL path fragments that indicate a content page rather than a homepage.
@@ -83,18 +100,40 @@ class Candidate:
     source: str
 
 
+# First-labels that mark a job/ATS or content SUBDOMAIN (only when a parent
+# domain exists, so the apex brands help.com / status.io / boards.ie survive).
+_JUNK_SUBDOMAIN_LABELS = {"careers", "jobs", "apply", "boards", "blog", "news",
+                          "support", "help", "docs", "status"}
+
+
+def _is_junk_subdomain(dom: str) -> bool:
+    labels = dom.split(".")
+    # require >=3 labels (label0 . brand . tld) so apex 'help.com' is NOT junk
+    return len(labels) >= 3 and labels[0] in _JUNK_SUBDOMAIN_LABELS
+
+
 def deterministic_reject(c: Candidate) -> str | None:
-    """Return a reason string if the candidate is obvious junk, else None."""
+    """Return a reason string if the candidate is obvious junk, else None.
+
+    Tuned for HIGH PRECISION — when unsure, return None and let the AI classifier
+    decide. Wrongly killing a real buyer here is worse than one extra LLM row.
+    """
     dom = (c.domain or "").lower()
     if any(dom == d or dom.endswith("." + d) for d in _JUNK_DOMAINS):
         return "junk_domain"
-    url = (c.url or "").lower()
-    if any(frag in url for frag in _JUNK_PATH_FRAGMENTS):
+    if _is_junk_subdomain(dom):
+        return "junk_subdomain"
+    # Check path fragments against the URL PATH only — matching the whole URL
+    # string would false-positive on the domain (e.g. "/guide" in "//guidewire").
+    from urllib.parse import urlparse
+    path = urlparse((c.url or "").lower()).path
+    if any(frag in path for frag in _JUNK_PATH_FRAGMENTS):
         return "content_path"
     if _TITLE_RE.search(c.title or ""):
         return "content_title"
-    # A homepage title is usually short-ish. Article titles run long.
-    if len((c.title or "").split()) > 14:
+    # Length check on the BRAND portion only (before the " - tagline"), so an
+    # SEO homepage like "Notion - The all-in-one workspace …" isn't dropped.
+    if len(_clean_title(c.title or "").split()) > 12:
         return "title_too_long"
     return None
 
@@ -108,8 +147,14 @@ REAL operating company that could be sold to — NOT a blog post, news article,
 "what is / how to" explainer, "top N / best X" listicle, vendor directory,
 comparison page, job board, or encyclopedia entry.
 
-For real companies, extract a clean company name (strip taglines / " - " suffix)
-and best-guess industry. Be strict: when in doubt, is_company=false.
+If a SELLER description is provided, ALSO flag direct COMPETITORS: companies
+whose primary business is offering the same product/service as the seller. A
+competitor is NOT a buyer — set is_competitor=true AND is_company=false for them
+(we never want competitors in the lead list). Example: if the seller offers
+"fractional CFO services", another fractional-CFO firm is a competitor.
+
+For real, non-competitor companies, extract a clean company name (strip taglines
+/ " - " suffix) and best-guess industry. Be strict: when in doubt, is_company=false.
 """
 
 _QUALIFY_SCHEMA: dict = {
@@ -124,13 +169,14 @@ _QUALIFY_SCHEMA: dict = {
                 "properties": {
                     "index": {"type": "integer"},
                     "is_company": {"type": "boolean"},
+                    "is_competitor": {"type": "boolean"},
                     "company_name": {"type": "string"},
                     "industry": {"type": "string"},
                     "confidence": {"type": "integer"},
                     "reject_reason": {"type": "string"},
                 },
-                "required": ["index", "is_company", "company_name", "industry",
-                             "confidence", "reject_reason"],
+                "required": ["index", "is_company", "is_competitor", "company_name",
+                             "industry", "confidence", "reject_reason"],
             },
         }
     },
@@ -138,13 +184,13 @@ _QUALIFY_SCHEMA: dict = {
 }
 
 
-def ai_qualify(candidates: list[Candidate], *, min_confidence: int = 55) -> list[dict]:
+def ai_qualify(candidates: list[Candidate], *, min_confidence: int = 55,
+               seller_description: str | None = None) -> list[dict]:
     """Classify all candidates in ONE batched LLM call.
 
     Returns a list aligned by input index:
-        {"index", "is_company", "company_name", "industry", "confidence"}
-    Entries the model couldn't judge (e.g. provider error) are returned with
-    is_company=False so nothing junky slips through on failure.
+        {"index", "is_company", "company_name", "industry", "confidence", "ai_verified"}
+    On provider error, falls back to deterministic-accept (see below).
     """
     if not candidates:
         return []
@@ -153,9 +199,19 @@ def ai_qualify(candidates: list[Candidate], *, min_confidence: int = 55) -> list
         f"{i}. title={c.title!r} domain={c.domain!r} snippet={(c.snippet or '')[:160]!r}"
         for i, c in enumerate(candidates)
     )
+    # Keep the OFFERING (strongest competitor signal) — put it first so a long
+    # business_description can't truncate it away.
+    seller_block = ""
+    if seller_description:
+        sd = seller_description.strip()
+        offering = ""
+        if "Offering:" in sd:
+            sd, _, offering = sd.partition("Offering:")
+            offering = " Offering:" + offering.strip()
+        seller_block = f"SELLER offers:{offering[:200]} {sd[:300]}\n\n"
     user = (
-        f"Classify these {len(candidates)} search results. Return one object per "
-        f"index (0..{len(candidates) - 1}).\n\n{listing}"
+        f"{seller_block}Classify these {len(candidates)} search results. Return one "
+        f"object per index (0..{len(candidates) - 1}).\n\n{listing}"
     )
     out = complete_json(
         system=_QUALIFY_SYSTEM,
@@ -167,10 +223,14 @@ def ai_qualify(candidates: list[Candidate], *, min_confidence: int = 55) -> list
     if out.get("_provider_error"):
         # AI qualifier unavailable (e.g. rate-limited). The candidates already
         # survived the deterministic junk filter, so accept them at reduced
-        # confidence rather than discarding real companies. Marked so the UI /
-        # downstream can tell these weren't AI-verified.
-        log.warning("qualify_provider_error_deterministic_fallback", n=len(candidates))
-        return [{"index": i, "is_company": True,
+        # confidence rather than discarding real companies. Marked ai_verified=
+        # False so downstream can re-screen.
+        # IMPORTANT BLIND SPOT: with the LLM down we CANNOT detect competitors,
+        # so competitor exclusion is disabled for these rows. They must be
+        # treated as un-vetted (ai_verified=False) until re-qualified.
+        log.warning("qualify_provider_error_deterministic_fallback",
+                    n=len(candidates), competitor_filter="disabled")
+        return [{"index": i, "is_company": True, "is_competitor": False,
                  "company_name": _clean_title(c.title), "industry": "",
                  "confidence": 50, "ai_verified": False}
                 for i, c in enumerate(candidates)]
@@ -179,10 +239,16 @@ def ai_qualify(candidates: list[Candidate], *, min_confidence: int = 55) -> list
     results = []
     for i, c in enumerate(candidates):
         r = by_index.get(i, {})
-        is_co = bool(r.get("is_company")) and int(r.get("confidence", 0)) >= min_confidence
+        is_competitor = bool(r.get("is_competitor"))
+        is_co = (
+            bool(r.get("is_company"))
+            and not is_competitor
+            and int(r.get("confidence", 0)) >= min_confidence
+        )
         results.append({
             "index": i,
             "is_company": is_co,
+            "is_competitor": is_competitor,
             "company_name": (r.get("company_name") or c.title).strip(),
             "industry": (r.get("industry") or "").strip(),
             "confidence": int(r.get("confidence", 0)),
@@ -191,16 +257,19 @@ def ai_qualify(candidates: list[Candidate], *, min_confidence: int = 55) -> list
     return results
 
 
-def qualify_candidates(candidates: list[Candidate], *, min_confidence: int = 55
+def qualify_candidates(candidates: list[Candidate], *, min_confidence: int = 55,
+                       seller_description: str | None = None
                        ) -> tuple[list[dict], dict]:
     """Full pipeline: deterministic reject → AI classify the survivors.
+
+    When `seller_description` is provided, direct competitors are rejected too.
 
     Returns (accepted, stats) where accepted is a list of
         {"candidate", "company_name", "industry", "confidence", "ai_verified"}
     and stats summarizes the funnel for logging/telemetry.
     """
     stats = {"total": len(candidates), "rejected_deterministic": 0,
-             "rejected_ai": 0, "accepted": 0}
+             "rejected_ai": 0, "rejected_competitor": 0, "accepted": 0}
 
     survivors: list[Candidate] = []
     for c in candidates:
@@ -210,7 +279,8 @@ def qualify_candidates(candidates: list[Candidate], *, min_confidence: int = 55
         else:
             survivors.append(c)
 
-    judged = ai_qualify(survivors, min_confidence=min_confidence)
+    judged = ai_qualify(survivors, min_confidence=min_confidence,
+                        seller_description=seller_description)
     accepted: list[dict] = []
     for j in judged:
         c = survivors[j["index"]]
@@ -222,6 +292,8 @@ def qualify_candidates(candidates: list[Candidate], *, min_confidence: int = 55
                 "confidence": j["confidence"],
                 "ai_verified": j.get("ai_verified", True),
             })
+        elif j.get("is_competitor"):
+            stats["rejected_competitor"] += 1
         else:
             stats["rejected_ai"] += 1
 

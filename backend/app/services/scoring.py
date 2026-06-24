@@ -14,6 +14,21 @@ from app.models.scoring import LeadScore
 from app.models.signal import Signal
 
 
+def latest_score_ids_select(organization_id: uuid.UUID):
+    """A SELECT of exactly ONE (latest) LeadScore id per company for an org.
+
+    Uses Postgres DISTINCT ON with a deterministic tie-break (created_at DESC,
+    id DESC) so a company with two scores sharing the same created_at yields
+    exactly one row — avoiding the double-count a max(created_at) self-join has.
+    """
+    return (
+        select(LeadScore.id)
+        .distinct(LeadScore.company_id)
+        .where(LeadScore.organization_id == organization_id)
+        .order_by(LeadScore.company_id, LeadScore.created_at.desc(), LeadScore.id.desc())
+    )
+
+
 def _row_as_dict(row) -> dict:
     if row is None:
         return {}

@@ -28,6 +28,7 @@ class ICPCore(BaseModel):
     buying_signals: list[str] = []
     keywords: list[str] = []
     excluded_keywords: list[str] = []
+    search_queries: list[str] = []
     tech_stack_required: list[str] = []
     tech_stack_excluded: list[str] = []
     weights: dict = {}

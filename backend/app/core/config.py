@@ -67,6 +67,13 @@ class Settings(BaseSettings):
     gemini_model_embedding: str = "gemini-embedding-001"
     gemini_base_url: str = "https://generativelanguage.googleapis.com/v1beta/openai/"
 
+    # Mistral (OpenAI-compatible). Takes priority over Gemini when set.
+    # Free tier: https://console.mistral.ai/ → API keys
+    mistral_api_key: str = ""
+    mistral_model_reasoning: str = "mistral-small-latest"
+    mistral_model_fast: str = "mistral-small-latest"
+    mistral_base_url: str = "https://api.mistral.ai/v1"
+
     # Search providers
     tavily_api_key: str = ""
     serper_api_key: str = ""
@@ -74,6 +81,15 @@ class Settings(BaseSettings):
     # Email validation
     hunter_api_key: str = ""
     neverbounce_api_key: str = ""
+
+    # Gmail sending + reply detection (SMTP send, IMAP poll)
+    gmail_address: str = ""
+    gmail_app_password: str = ""   # 16-char Google App Password (not your login pw)
+    gmail_from_name: str = "LeadForge"
+
+    # Telegram notifications
+    telegram_bot_token: str = ""
+    telegram_chat_id: str = ""
 
     # Storage
     aws_region: str = "us-east-1"

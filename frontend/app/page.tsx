@@ -1,8 +1,11 @@
 import Link from "next/link";
 import { Sparkles, Target, Workflow, Zap, ArrowRight, Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { clerkConfigured } from "@/lib/clerk-config";
 
 export default function MarketingHome() {
+  // In demo mode there's no auth, so CTAs go straight into the app.
+  const ctaHref = clerkConfigured ? "/sign-up" : "/dashboard";
   return (
     <div className="min-h-screen">
       {/* nav */}
@@ -20,8 +23,8 @@ export default function MarketingHome() {
             <Link href="/pricing">Pricing</Link>
           </nav>
           <div className="flex items-center gap-2">
-            <Link href="/sign-in"><Button variant="ghost" size="sm">Sign in</Button></Link>
-            <Link href="/sign-up"><Button size="sm" variant="glow">Get started</Button></Link>
+            <Link href={ctaHref}><Button variant="ghost" size="sm">Sign in</Button></Link>
+            <Link href={ctaHref}><Button size="sm" variant="glow">Get started</Button></Link>
           </div>
         </div>
       </header>
@@ -40,7 +43,7 @@ export default function MarketingHome() {
           LeadForge turns a one-sentence description of your business into an ICP, a list of ranked accounts, validated contacts, buying signals, and personalized outreach — all in minutes.
         </p>
         <div className="mt-8 flex items-center justify-center gap-3">
-          <Link href="/sign-up">
+          <Link href={ctaHref}>
             <Button size="lg" variant="glow" className="gap-2">
               Start free <ArrowRight className="h-4 w-4" />
             </Button>
@@ -95,7 +98,7 @@ export default function MarketingHome() {
           <h2 className="mt-4 text-3xl font-semibold">Stop hunting. Start closing.</h2>
           <p className="mt-2 text-muted-foreground">Free for the first 50 leads. No credit card.</p>
           <div className="mt-6 flex items-center justify-center gap-3">
-            <Link href="/sign-up"><Button size="lg" variant="glow">Try LeadForge</Button></Link>
+            <Link href={ctaHref}><Button size="lg" variant="glow">Try LeadForge</Button></Link>
           </div>
           <ul className="mt-8 flex flex-wrap justify-center gap-x-6 gap-y-2 text-xs text-muted-foreground">
             {["GDPR-friendly", "Bring your own keys", "Cancel anytime"].map(b => (

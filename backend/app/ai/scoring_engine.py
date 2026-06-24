@@ -49,12 +49,27 @@ def _heuristic_subscores(inp: ScoreInput) -> dict[str, int]:
     fit = 50
     if company.get("industry") and company["industry"] in (icp.get("industries") or []):
         fit += 25
-    emp = company.get("employee_count") or 0
-    if (icp.get("employee_min") or 0) <= emp <= (icp.get("employee_max") or 10**9):
-        fit += 15
     if company.get("country") and company["country"] in (icp.get("countries") or []):
         fit += 10
-    fit = min(100, fit)
+
+    # Employee-size fit: reward being INSIDE the ICP band, but PENALIZE being
+    # outside it proportionally to how far off-size the company is. A grossly
+    # off-size account (a 27k-employee industrial giant or a 9-person shop for a
+    # 50–1000 ICP) is a strong disqualifier, not merely a missed bonus — without
+    # this penalty such rows kept the base 50 + industry/country bonuses and
+    # passed scoring. Unknown size (0/None) is left neutral so freshly-discovered,
+    # not-yet-enriched rows aren't unfairly punished.
+    emp = company.get("employee_count") or 0
+    emp_min = icp.get("employee_min") or 0
+    emp_max = icp.get("employee_max") or 10**9
+    if emp > 0:
+        if emp_min <= emp <= emp_max:
+            fit += 15
+        else:
+            ratio = (emp / emp_max) if emp > emp_max else (emp_min / max(1, emp))
+            # log2 ramp: 1.5x→-14, 2x→-24, 3x→-38, 5x→-56, ≥~5.7x→-60 (capped)
+            fit -= min(60, int(24 * math.log2(max(1.0, ratio))))
+    fit = max(0, min(100, fit))
 
     # --- per-signal subscores ---
     def by_kind(kind: str) -> list[dict]:

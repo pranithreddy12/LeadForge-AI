@@ -10,3 +10,4 @@ from app.models.campaign import Campaign, EmailMessage  # noqa: F401
 from app.models.crm import CRMActivity, CRMTask, PipelineStage  # noqa: F401
 from app.models.workflow import Workflow, WorkflowRun  # noqa: F401
 from app.models.billing import Subscription  # noqa: F401
+from app.models.research import AccountResearch  # noqa: F401
