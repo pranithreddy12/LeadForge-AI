@@ -81,6 +81,51 @@ _JUNK_PATH_FRAGMENTS = [
 
 _TITLE_RE = re.compile("|".join(_JUNK_TITLE_PATTERNS), re.IGNORECASE)
 
+# ---- name-sanity (P0 #2) --------------------------------------------------
+# Live SERP leaks ARTICLE HEADLINES as company names ("Canada's Top SME Employers
+# 2026", "How This Logistics Company Dealt With Manual Work"). A real company name
+# never looks like these. Reject the name itself, deterministically, before any LLM.
+_NAME_YEAR_RE = re.compile(r"\b(?:19|20)\d{2}\b")
+# starts with Top/Best/The Best/How/What/Why or any digit (10 Best, 50 Greatest, ...)
+_NAME_START_RE = re.compile(r"^\s*(?:the\s+best|top|best|how|what|why|\d)", re.IGNORECASE)
+_NAME_ORDINAL_RE = re.compile(
+    r"\b\d{1,4}\s+(?:best|top|greatest|companies|company|firms?|startups?|tools?|"
+    r"platforms?|providers?|vendors?|solutions?|ways?|reasons?|employers?|tips?|examples?)\b",
+    re.IGNORECASE,
+)
+# article separators (checked on the RAW title — _clean_title strips them)
+_NAME_SEP_RE = re.compile(r"\s\|\s|\svs\.?\s", re.IGNORECASE)
+# article words — only when QUALIFIED ("Complete Guide", "Buyer's Guide", "Annual
+# Report"), so a real company like "Insurance Guide Inc" is NOT rejected.
+_NAME_WORD_RE = re.compile(
+    r"\b(?:complete|ultimate|definitive|comprehensive|in-?depth|buyer'?s|full|"
+    r"annual|quarterly|essential)\s+(?:guide|reviews?|reports?|rankings?|listicle|list)\b",
+    re.IGNORECASE)
+
+
+def name_is_junk(title: str) -> str | None:
+    """Return a reason if `title` looks like an ARTICLE/LISTICLE headline rather than a
+    company name. Separators are checked on the raw title; the rest on the cleaned brand
+    name so a real company's long SEO tagline isn't mistaken for a listicle. High
+    precision — real brand names match none of these."""
+    raw = (title or "").strip()
+    if not raw:
+        return None
+    if _NAME_SEP_RE.search(raw):
+        return "name_separator"
+    name = _clean_title(raw)
+    if len(name) > 80:
+        return "name_too_long"
+    if _NAME_YEAR_RE.search(name):
+        return "name_has_year"
+    if _NAME_START_RE.search(name):
+        return "name_listicle_start"
+    if _NAME_ORDINAL_RE.search(name):
+        return "name_ordinal"
+    if _NAME_WORD_RE.search(name):
+        return "name_article_word"
+    return None
+
 
 def _clean_title(title: str) -> str:
     """Best-effort company-name cleanup for the no-AI fallback path:
@@ -138,6 +183,10 @@ def deterministic_reject(c: Candidate) -> str | None:
     # SEO homepage like "Notion - The all-in-one workspace …" isn't dropped.
     if len(_clean_title(c.title or "").split()) > 12:
         return "title_too_long"
+    # Name-sanity (runs before the LLM — free, deterministic): reject article/listicle
+    # headlines masquerading as company names.
+    if (nr := name_is_junk(c.title or "")):
+        return nr
     return None
 
 
@@ -158,6 +207,12 @@ _DET_REASON_TO_LABEL = {
     "content_path": "listicle_or_content",
     "content_title": "listicle_or_content",
     "title_too_long": "listicle_or_content",
+    "name_too_long": "listicle_or_content",
+    "name_has_year": "listicle_or_content",
+    "name_listicle_start": "listicle_or_content",
+    "name_ordinal": "listicle_or_content",
+    "name_separator": "listicle_or_content",
+    "name_article_word": "listicle_or_content",
 }
 
 

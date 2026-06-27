@@ -98,7 +98,7 @@ def discover_contacts_for_company(db: Session, company: Company) -> list[Contact
             new_contacts.append(_make_contact(company, name=name, title=title,
                                               linkedin_url=li_url, personas=personas))
 
-    # ---- 2. Hunter domain search (gets emails too) ---------------------------
+    # ---- 2. Hunter domain search (gets emails too; no-op without HUNTER_API_KEY)
     if company.domain:
         for entry in find_emails_for_domain(company.domain):
             fn = entry.get("first_name") or ""
@@ -110,6 +110,19 @@ def discover_contacts_for_company(db: Session, company: Company) -> list[Contact
                 email=entry.get("value"),
                 linkedin_url=entry.get("linkedin"),
                 personas=personas,
+            ))
+
+    # ---- 3. Website contact-page email scrape (free; SSRF-guarded) -----------
+    # Picks up role inboxes (info@/contact@/sales@) on the company's own domain so
+    # the daily pipeline has a real recipient without a paid email-finding API.
+    if company.domain:
+        from app.services.scraper import scrape_emails_for_domain
+        for addr in scrape_emails_for_domain(company.domain):
+            local = addr.split("@")[0]
+            title = "Sales" if local in ("sales", "hello", "info", "contact") else "Contact"
+            new_contacts.append(_make_contact(
+                company, name=f"{company.name} ({local}@)", title=title,
+                email=addr, personas=personas,
             ))
 
     persisted = _persist(db, company, new_contacts)

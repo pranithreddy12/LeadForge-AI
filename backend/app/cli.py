@@ -115,17 +115,14 @@ def daily_workflow(icp_name_contains: str = "Automation") -> None:
 
     db = SessionLocal()
     try:
+        from app.services.icp import get_active_icp
         org = db.query(Organization).filter(Organization.slug == "demo").first()
         if not org:
             print("no demo org — run `seed` first")
             return
-        icp = (
-            db.query(ICP).join(Project, Project.id == ICP.project_id)
-            .filter(Project.organization_id == org.id, ICP.name.ilike(f"%{icp_name_contains}%"))
-            .order_by(ICP.created_at.desc()).first()
-        )
+        icp = get_active_icp(db, org.id)
         if not icp:
-            print(f"no ICP matching {icp_name_contains!r}")
+            print("no ACTIVE ICP — run `python -m app.cli activate-icp \"<name>\"` first")
             return
 
         steps = [
@@ -137,12 +134,16 @@ def daily_workflow(icp_name_contains: str = "Automation") -> None:
              "config": {"icp_id": str(icp.id)}, "next": ["filter"]},
             {"id": "filter", "type": "filter",
              "config": {"min_score": 65, "enforce_icp_size": True,
-                        "icp_id": str(icp.id)}, "next": ["draft"]},
+                        "icp_id": str(icp.id)}, "next": ["contacts"]},
+            # Find decision-maker contacts + scrape on-domain emails, then validate,
+            # so outreach has a real recipient (no paid email-finder needed).
+            {"id": "contacts", "type": "find_contacts", "config": {}, "next": ["validate"]},
+            {"id": "validate", "type": "validate_emails", "config": {}, "next": ["draft"]},
             {"id": "draft", "type": "generate_outreach",
              "config": {"channel": "email"}, "next": ["send"]},
             {"id": "send", "type": "send_emails", "config": {}, "next": ["crm"]},
             {"id": "crm", "type": "add_to_crm",
-             "config": {"stage": "contacted"}, "next": ["notify"]},
+             "config": {"stage": "contacted", "only_sent": True}, "next": ["notify"]},
             {"id": "notify", "type": "notify_telegram", "config": {}, "next": []},
         ]
         existing = db.query(Workflow).filter(
@@ -252,10 +253,11 @@ def discovery_eval() -> None:
 
     db = SessionLocal()
     try:
-        icp = db.execute(select(ICP).where(ICP.name.ilike("%Automation%"))
-                         .order_by(ICP.created_at.desc())).scalars().first()
+        from app.services.icp import get_active_icp
+        org = db.query(Organization).filter(Organization.slug == "demo").first()
+        icp = get_active_icp(db, org.id) if org else None
         if not icp:
-            print("no Automation ICP — run seed/ICP gen first")
+            print("no ACTIVE ICP — run `python -m app.cli activate-icp \"<name>\"` first")
             return
         seller = ""
         if icp.project is not None:
@@ -344,11 +346,18 @@ def outreach_dryrun() -> None:
     TEST_RECIPIENT = "pranithredy3207@gmail.com"  # dry-run only; nothing is sent
     db = SessionLocal()
     try:
-        icp = db.execute(select(ICP).where(ICP.name.ilike("%Automation%"))
-                         .order_by(ICP.created_at.desc())).scalars().first()
-        pool = db.execute(select(Company).where(Company.icp_id == icp.id)
+        from app.services.icp import get_active_icp
+        from app.services.leadpool import buyer_only
+        org = db.query(Organization).filter(Organization.slug == "demo").first()
+        icp = get_active_icp(db, org.id) if org else None
+        if not icp:
+            print("no ACTIVE ICP — run `python -m app.cli activate-icp \"<name>\"` first")
+            return
+        # Dry-run the pool the daily engine would actually act on: this ICP's
+        # BUYER-classified companies (vendors/VCs excluded, P1 #9).
+        pool = db.execute(select(Company).where(Company.icp_id == icp.id, buyer_only())
                           .order_by(Company.name)).scalars().all()
-        org_id = icp.project.organization_id if icp.project else (pool[0].organization_id if pool else None)
+        org_id = icp.organization_id or (icp.project.organization_id if icp.project else None)
 
         per_run = settings.max_emails_per_run
         daily_remaining = daily_cap_remaining(db, org_id)
@@ -359,8 +368,11 @@ def outreach_dryrun() -> None:
               f"(remaining today={daily_remaining})")
         print("=" * 74)
         for co in pool:
-            contact = db.execute(select(Contact).where(Contact.company_id == co.id)
-                                 .order_by(Contact.is_primary.desc())).scalars().first()
+            contact = db.execute(
+                select(Contact).where(Contact.company_id == co.id, Contact.email.is_not(None))
+                .order_by(Contact.influence_score.desc().nullslast())).scalars().first() \
+                or db.execute(select(Contact).where(Contact.company_id == co.id)
+                              .order_by(Contact.is_primary.desc())).scalars().first()
             print(f"\n- {co.name}  ({co.domain})  stage={co.pipeline_stage} "
                   f"class={co.classification_status or 'buyer'}")
             reason = suppression_reason(db, co, contact)
@@ -402,9 +414,123 @@ def _rowdict(r):
     return {c.key: getattr(r, c.key) for c in r.__table__.columns} if r else None
 
 
+def local_smb_setup() -> None:
+    """Create (or refresh) a local-SMB ICP + a daily Places-sourced workflow.
+    Usage: python -m app.cli local-smb "<City, Region>" "cat1,cat2,..."
+    Categories default to common AI-voice-agent-fit verticals."""
+    from app.models.icp import ICP
+    from app.models.project import Project
+    from app.models.workflow import Workflow
+
+    city = sys.argv[2] if len(sys.argv) > 2 else "Austin, TX"
+    cats = (sys.argv[3].split(",") if len(sys.argv) > 3 else
+            ["dental clinics", "med spas", "law firms", "HVAC contractors",
+             "roofing companies", "real estate agencies", "auto dealerships",
+             "hair salons"])
+    queries = [f"{c.strip()} in {city}" for c in cats if c.strip()]
+
+    db = SessionLocal()
+    try:
+        org = db.query(Organization).filter(Organization.slug == "demo").first()
+        project = db.query(Project).filter(Project.organization_id == org.id).first()
+        icp = (db.query(ICP).join(Project, Project.id == ICP.project_id)
+               .filter(Project.organization_id == org.id, ICP.name.ilike("%Local SMB%"))
+               .first())
+        if not icp:
+            icp = ICP(project_id=project.id, name="Local SMB - Voice Agent Buyers")
+            db.add(icp)
+        icp.summary = f"Local service businesses in {city} that benefit from AI voice agents / speed-to-lead."
+        icp.industries = cats
+        icp.countries = [city]
+        icp.employee_min = 1
+        icp.employee_max = 500
+        icp.buyer_personas = ["Owner", "Office Manager", "Practice Manager", "General Manager"]
+        icp.buying_signals = ["Missed-call volume", "After-hours inquiries", "Manual appointment booking"]
+        icp.keywords = cats
+        icp.search_queries = queries
+        db.flush()
+
+        steps = [
+            {"id": "discover", "type": "discover_places",
+             "config": {"icp_id": str(icp.id), "limit": 10}, "next": ["contacts"]},
+            {"id": "contacts", "type": "find_contacts", "config": {}, "next": ["validate"]},
+            {"id": "validate", "type": "validate_emails", "config": {}, "next": ["draft"]},
+            {"id": "draft", "type": "generate_outreach", "config": {"channel": "email"}, "next": ["send"]},
+            {"id": "send", "type": "send_emails", "config": {}, "next": ["crm"]},
+            {"id": "crm", "type": "add_to_crm", "config": {"stage": "contacted", "only_sent": True}, "next": ["notify"]},
+            {"id": "notify", "type": "notify_telegram", "config": {}, "next": []},
+        ]
+        wf = db.query(Workflow).filter(Workflow.organization_id == org.id,
+                                       Workflow.name == "Daily local-SMB engine").first()
+        if not wf:
+            wf = Workflow(organization_id=org.id, project_id=project.id,
+                          name="Daily local-SMB engine", schedule="daily", enabled=True)
+            db.add(wf)
+        wf.description = f"Places-sourced local outreach in {city}."
+        wf.steps = steps
+        wf.schedule = "daily"
+        wf.enabled = True
+        wf.settings = {"icp_id": str(icp.id)}
+        db.commit()
+        print(f"local-SMB ICP + workflow ready. city={city}")
+        print("queries:")
+        for q in queries:
+            print(f"  - {q}")
+        print("NOTE: set GOOGLE_MAPS_API_KEY in .env (Places API enabled + billing on) to activate.")
+    finally:
+        db.close()
+
+
+def activate_icp_cmd() -> None:
+    """python -m app.cli activate-icp "<name substring>"
+    Set the org's SINGLE active ICP (deactivates all others). No arg -> show current."""
+    from app.services.icp import activate_icp, get_active_icp
+    name = sys.argv[2] if len(sys.argv) > 2 else ""
+    db = SessionLocal()
+    try:
+        org = db.query(Organization).filter(Organization.slug == "demo").first()
+        if not name:
+            cur = get_active_icp(db, org.id)
+            print(f"active ICP: {cur.name if cur else '(none)'}")
+            return
+        icp = (db.query(ICP).filter(ICP.organization_id == org.id,
+                                    ICP.name.ilike(f"%{name}%"))
+               .order_by(ICP.created_at.desc()).first())
+        if not icp:
+            print(f"no ICP matching {name!r}")
+            return
+        activate_icp(db, icp)
+        print(f"ACTIVE ICP -> {icp.name}  (emp {icp.employee_min}-{icp.employee_max}, "
+              f"{len(icp.industries or [])} industries)")
+    finally:
+        db.close()
+
+
+def reclassify_cmd() -> None:
+    """python -m app.cli reclassify  -> re-run the gate on existing companies, store the
+    real label so vendors/VCs that slipped in are excluded from the lead pool (P1 #9)."""
+    from sqlalchemy import select as _select
+
+    from app.models.project import Project
+    from app.services.discovery import reclassify_existing
+    db = SessionLocal()
+    try:
+        org = db.query(Organization).filter(Organization.slug == "demo").first()
+        proj = db.execute(_select(Project).where(Project.organization_id == org.id)
+                          .order_by(Project.created_at.desc())).scalars().first()
+        seller = (proj.business_description or "") if proj else ""
+        changes = reclassify_existing(db, organization_id=org.id, seller_description=seller)
+        print(f"reclassified — {len(changes)} changed:")
+        for name, (old, new) in changes.items():
+            print(f"  {name[:40]:42} {old or 'buyer'} -> {new}")
+    finally:
+        db.close()
+
+
 COMMANDS = {"seed": seed, "keys": keys, "daily-workflow": daily_workflow,
             "eval": evaluate, "discovery-eval": discovery_eval,
-            "outreach-dryrun": outreach_dryrun}
+            "outreach-dryrun": outreach_dryrun, "local-smb": local_smb_setup,
+            "activate-icp": activate_icp_cmd, "reclassify": reclassify_cmd}
 
 
 if __name__ == "__main__":

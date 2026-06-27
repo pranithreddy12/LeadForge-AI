@@ -239,13 +239,24 @@ def score_lead(inp: ScoreInput, *, use_llm: bool = True) -> dict:
         if ratio > 1.15:
             final = min(final, max(40, int(69 - 12 * math.log2(ratio))))
 
-    probability = float(llm.get("probability") or round(final / 100.0, 2))
-    reasoning = list(llm.get("reasoning") or [])
+    # BUG 5: a non-buyer GATE VERDICT hard-caps the score. A vendor/competitor/VC scores
+    # like a great buyer on firmographics+signals, so without this it can be the top lead.
+    # Consult the gate's verdict (classification_label) and cap at 40 / grade F.
+    label = (company.get("classification_label") or "").strip().lower()
+    grade = grade_for(final)
+    if label and label != "buyer":
+        final = min(final, 40)
+        grade = "F"
+        reasoning = [f"Gate classified this company as '{label}', not a buyer — excluded "
+                     "from the lead pool regardless of firmographics."]
+    else:
+        reasoning = list(llm.get("reasoning") or [])
 
+    probability = round(final / 100.0, 2)
     return {
         **sub,
         "score": final,
-        "grade": grade_for(final),
+        "grade": grade,
         "probability": probability,
         "reasoning": reasoning[:6],
         "raw": {"heuristic": base, "llm": llm},

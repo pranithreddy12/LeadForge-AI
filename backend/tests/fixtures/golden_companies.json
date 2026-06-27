@@ -277,6 +277,62 @@
       "expected_label": "listicle_or_content", "expected_grade_band": null,
       "firmographics": {"employee_count": null, "industry": null, "country": null, "signals": []},
       "notes": "Explainer/content page on a /blog/ path with 'what is' title -> deterministic catch (even though zapier.com is a real co, THIS URL is content)."
+    },
+    {
+      "name": "Canada's Top Small & Medium Employers (2026)", "domain": "canadastop100.com", "url": "https://canadastop100.com/smb",
+      "title": "Canada's Top Small & Medium Employers (2026)",
+      "snippet": "An editorial list recognizing Canada's top small and medium-sized employers for 2026.",
+      "expected_label": "listicle_or_content", "expected_grade_band": null,
+      "firmographics": {"employee_count": null, "industry": null, "country": null, "signals": []},
+      "notes": "P0 #2 live-leak case: article headline as a name (year + 'Top' + ordinal). name_is_junk -> reject."
+    },
+    {
+      "name": "How This Logistics Company Dealt With Manual Workarounds", "domain": "arrivelogistics.com", "url": "https://arrivelogistics.com/blog/manual-workarounds",
+      "title": "How This Logistics Company Dealt With Manual Workarounds",
+      "snippet": "A case-study article about a logistics company reducing manual work.",
+      "expected_label": "listicle_or_content", "expected_grade_band": null,
+      "firmographics": {"employee_count": null, "industry": null, "country": null, "signals": []},
+      "notes": "P0 #2 live-leak case: REAL domain (arrivelogistics.com) but the NAME is an article headline starting with 'How'. name_is_junk -> reject (domain heuristics alone would miss it)."
+    },
+    {
+      "name": "50 Best AI Tools for Professional Services Firms in 2026", "domain": "smbtechblog.io", "url": "https://smbtechblog.io/50-best-ai-tools",
+      "title": "50 Best AI Tools for Professional Services Firms in 2026",
+      "snippet": "Our roundup of the 50 best AI tools for professional services firms this year.",
+      "expected_label": "listicle_or_content", "expected_grade_band": null,
+      "firmographics": {"employee_count": null, "industry": null, "country": null, "signals": []},
+      "notes": "P0 #2 live-leak case: ordinal listicle ('50 Best') + year. name_is_junk -> reject."
+    },
+    {
+      "name": "Canada's Top Small & Medium Employers 2026", "domain": "canadastop100.com", "url": "https://canadastop100.com/smb-2026",
+      "title": "Canada's Top Small & Medium Employers 2026",
+      "snippet": "Editorial list of Canada's top small and medium-sized employers for 2026.",
+      "expected_label": "listicle_or_content", "expected_grade_band": null,
+      "firmographics": {"employee_count": null, "industry": null, "country": null, "signals": []},
+      "notes": "BUG2 exact leaked case: year + Top + ordinal. name_is_junk -> reject (name_has_year)."
+    },
+    {
+      "name": "50 Best SaaS Companies to Work For in 2026", "domain": "builtin.com", "url": "https://builtin.com/50-best-saas-2026",
+      "title": "50 Best SaaS Companies to Work For in 2026",
+      "snippet": "Our ranking of the 50 best SaaS companies to work for this year.",
+      "expected_label": "listicle_or_content", "expected_grade_band": null,
+      "firmographics": {"employee_count": null, "industry": null, "country": null, "signals": []},
+      "notes": "BUG2: ordinal '50 Best' + year + digit-start. name_is_junk -> reject."
+    },
+    {
+      "name": "How to Choose an AI Automation Agency | Complete Guide", "domain": "automationblog.io", "url": "https://automationblog.io/how-to-choose",
+      "title": "How to Choose an AI Automation Agency | Complete Guide",
+      "snippet": "A complete guide to choosing the right AI automation agency for your business.",
+      "expected_label": "listicle_or_content", "expected_grade_band": null,
+      "firmographics": {"employee_count": null, "industry": null, "country": null, "signals": []},
+      "notes": "BUG2: starts with 'How' + ' | ' separator + 'Guide'. name_is_junk -> reject (name_separator)."
+    },
+    {
+      "name": "Top 10 Automation Tools vs Manual Processes", "domain": "techcompare.io", "url": "https://techcompare.io/automation-vs-manual",
+      "title": "Top 10 Automation Tools vs Manual Processes",
+      "snippet": "Comparison of the top 10 automation tools versus doing it manually.",
+      "expected_label": "listicle_or_content", "expected_grade_band": null,
+      "firmographics": {"employee_count": null, "industry": null, "country": null, "signals": []},
+      "notes": "BUG2: 'Top 10' ordinal + ' vs ' comparison. name_is_junk -> reject (name_separator)."
     }
   ]
 }

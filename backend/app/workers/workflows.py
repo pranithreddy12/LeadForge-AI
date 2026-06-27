@@ -58,9 +58,51 @@ log = get_logger("workers.workflows")
 # ---- step handlers ----------------------------------------------------------
 
 
+def _step_discover_local(db, org_id: uuid.UUID, ctx: dict, config: dict) -> dict:
+    """Local-SMB discovery via Google Places, driven by Settings (Step 5). Nothing-
+    static: no Places key -> empty result, logged, no crash."""
+    from app.services.discovery import discover_local_businesses
+    from app.services.icp import get_active_icp
+    from app.services.settings_resolver import resolve_credential, settings_row
+    s = settings_row(db, org_id)
+    icp = get_active_icp(db, org_id)
+    if s is None or icp is None:
+        return {"company_ids": ctx.get("company_ids", []), "delta": 0,
+                "error": "no_settings_or_icp"}
+    key = resolve_credential(db, org_id, "google_places_api_key")
+    if not key:
+        log.info("discover_local_no_places_key")
+        return {"company_ids": ctx.get("company_ids", []), "delta": 0, "no_places_key": True}
+    seller = ""
+    if icp.project is not None:
+        seller = icp.project.business_description or ""
+    rows, stats = discover_local_businesses(
+        db, organization_id=org_id, icp=icp,
+        business_types=s.target_business_types or [], locations=s.target_locations or [],
+        min_reviews=s.min_reviews, max_results=s.max_results_per_run,
+        api_key=key, seller_description=seller)
+    buyer_rows = [r for r in rows if r.classification_status in (None, "buyer")]
+    company_ids = ctx.get("company_ids", []) + [str(r.id) for r in buyer_rows]
+    return {"company_ids": company_ids, "delta": len(buyer_rows), "places_stats": stats}
+
+
 def _step_discover(db, org_id: uuid.UUID, ctx: dict, config: dict) -> dict:
-    icp_id = uuid.UUID(config.get("icp_id") or ctx["icp_id"])
-    icp = db.get(ICP, icp_id)
+    # Mode-aware (Step 4): Settings.discovery_mode == "local" -> Google Places instead
+    # of web search. Same DAG, the handler reads Settings.
+    from app.services.settings_resolver import settings_row
+    s = settings_row(db, org_id)
+    if s is not None and s.discovery_mode == "local":
+        return _step_discover_local(db, org_id, ctx, config)
+    # B2B discovery uses the org's SINGLE active ICP (synced from Settings) — no more
+    # name-matched / hardcoded icp_id. Config/ctx icp_id is only a fallback.
+    from app.services.icp import get_active_icp
+    icp = get_active_icp(db, org_id)
+    if icp is None:
+        icp_id = config.get("icp_id") or ctx.get("icp_id")
+        icp = db.get(ICP, uuid.UUID(str(icp_id))) if icp_id else None
+    if icp is None:
+        return {"company_ids": ctx.get("company_ids", []), "delta": 0,
+                "error": "no_active_icp"}
     limit = int(config.get("limit", 25))
     cands = discover_via_search(icp, limit=limit, extra_keywords=config.get("keywords"))
     rows = persist_candidates(db, organization_id=org_id, icp=icp, candidates=cands)
@@ -70,6 +112,20 @@ def _step_discover(db, org_id: uuid.UUID, ctx: dict, config: dict) -> dict:
     held = len(rows) - len(buyer_rows)
     company_ids = ctx.get("company_ids", []) + [str(r.id) for r in buyer_rows]
     return {"company_ids": company_ids, "delta": len(buyer_rows), "held_unknown": held}
+
+
+def _step_discover_places(db, org_id: uuid.UUID, ctx: dict, config: dict) -> dict:
+    """Local-SMB discovery via Google Places (compliant). config: icp_id, limit,
+    optional queries[]. Held-unknown filtering not needed (Places results are real
+    verified businesses, not noisy SERP candidates)."""
+    from app.services.discovery import discover_via_places
+    icp_id = uuid.UUID(config.get("icp_id") or ctx["icp_id"])
+    icp = db.get(ICP, icp_id)
+    cands = discover_via_places(icp, limit=int(config.get("limit", 20)),
+                                queries=config.get("queries"))
+    rows = persist_candidates(db, organization_id=org_id, icp=icp, candidates=cands)
+    company_ids = ctx.get("company_ids", []) + [str(r.id) for r in rows]
+    return {"company_ids": company_ids, "delta": len(rows), "source": "places"}
 
 
 def _step_enrich(db, org_id: uuid.UUID, ctx: dict, _config: dict) -> dict:
@@ -88,7 +144,23 @@ def _step_enrich(db, org_id: uuid.UUID, ctx: dict, _config: dict) -> dict:
     return {"enriched": n}
 
 
+def _step_detect_local_signals(db, org_id: uuid.UUID, ctx: dict, _config: dict) -> dict:
+    """Review/website-based signals for local businesses (Step 6)."""
+    from app.services.local_signals import detect_local_signals
+    n = 0
+    for cid in ctx.get("company_ids", []):
+        c = db.get(Company, uuid.UUID(cid))
+        if c:
+            n += len(detect_local_signals(db, c))
+    return {"signals_created": n, "kind": "local"}
+
+
 def _step_signals(db, org_id: uuid.UUID, ctx: dict, _config: dict) -> dict:
+    # Mode-aware: local businesses get review/website signals, not web/funding signals.
+    from app.services.settings_resolver import settings_row
+    s = settings_row(db, org_id)
+    if s is not None and s.discovery_mode == "local":
+        return _step_detect_local_signals(db, org_id, ctx, _config)
     n = 0
     for cid in ctx.get("company_ids", []):
         c = db.get(Company, uuid.UUID(cid))
@@ -173,18 +245,24 @@ def _step_send_emails(db, org_id: uuid.UUID, ctx: dict, config: dict) -> dict:
         )
     ).scalars().all()
 
-    # Caps enforced BEFORE any send attempt: per-run cap and the org's daily cap.
-    per_run = int(config.get("max_per_run") or settings.max_emails_per_run)
+    # Caps enforced BEFORE any send attempt — from Settings (else .env).
+    from app.services.settings_resolver import resolve_caps
+    res_run, res_day = resolve_caps(db, org_id)
+    per_run = int(config.get("max_per_run") or res_run)
     budget = min(per_run, daily_cap_remaining(db, org_id))
     sent = capped = 0
+    sent_ids: list[str] = []   # companies with a CONFIRMED send — the only ones add_to_crm may advance
     for m in drafts:
         if sent >= budget:
             capped += 1
             continue
         if send_email_message(db, m).get("sent"):
             sent += 1
-    return {"sent": sent, "drafts": len(drafts), "skipped_by_cap": capped,
-            "per_run_cap": per_run, "daily_cap": settings.max_emails_per_day}
+            if m.company_id:
+                sent_ids.append(str(m.company_id))
+    return {"sent": sent, "sent_company_ids": sent_ids, "drafts": len(drafts),
+            "skipped_by_cap": capped, "per_run_cap": per_run,
+            "daily_cap": settings.max_emails_per_day}
 
 
 def _step_notify_telegram(db, org_id: uuid.UUID, ctx: dict, config: dict) -> dict:
@@ -261,10 +339,13 @@ def _step_filter(db, org_id: uuid.UUID, ctx: dict, config: dict) -> dict:
     for cid, score, grade in score_rows:
         latest.setdefault(cid, (score, grade))
 
+    from app.services.leadpool import is_buyer
     out: list[str] = []
     for cid in company_ids:
         company = db.get(Company, uuid.UUID(cid))
         if not company:
+            continue
+        if not is_buyer(company):   # P1 #9: non-buyer-classified never proceed to outreach
             continue
         score, grade = latest.get(company.id, (None, None))
         if (m := config.get("min_score")) is not None and (score or 0) < int(m):
@@ -286,16 +367,29 @@ def _step_filter(db, org_id: uuid.UUID, ctx: dict, config: dict) -> dict:
     return {"company_ids": out, "passed": len(out)}
 
 
+_CONTACTED_STAGES = {"contacted", "replied", "meeting", "proposal", "won", "lost"}
+
+
 def _step_add_to_crm(db, org_id: uuid.UUID, ctx: dict, config: dict) -> dict:
+    """Advance pipeline stage. A 'contacted'-or-beyond stage means we actually reached
+    the company, so it must ONLY apply to companies with a CONFIRMED send — otherwise a
+    0-send run silently marks leads contacted and permanently suppresses them (P0 bug).
+    Safe-by-default: if this is a contacted+ stage AND a send step ran (ctx carries
+    sent_company_ids), advance only those. `only_sent: true` forces it explicitly.
+    Pre-send stages (e.g. 'qualified') still advance the whole filtered set."""
     stage = config.get("stage", "qualified")
+    gate_on_send = config.get("only_sent") or (
+        stage in _CONTACTED_STAGES and "sent_company_ids" in ctx)
+    ids = ctx.get("sent_company_ids", []) if gate_on_send else ctx.get("company_ids", [])
     n = 0
-    for cid in ctx.get("company_ids", []):
+    for cid in ids:
         c = db.get(Company, uuid.UUID(cid))
         if c:
             c.pipeline_stage = stage
             n += 1
     db.commit()
-    return {"moved": n, "to": stage}
+    return {"moved": n, "to": stage, "gated_on_send": gate_on_send,
+            "candidates": len(ctx.get("company_ids", []))}
 
 
 def _step_webhook(db, org_id: uuid.UUID, ctx: dict, config: dict) -> dict:
@@ -317,8 +411,11 @@ def _step_wait(_db, _org_id, _ctx, config) -> dict:
 
 HANDLERS = {
     "discover_companies": _step_discover,
+    "discover_local": _step_discover_local,
+    "discover_places": _step_discover_places,
     "enrich": _step_enrich,
     "detect_signals": _step_signals,
+    "detect_local_signals": _step_detect_local_signals,
     "find_contacts": _step_contacts,
     "validate_emails": _step_validate_emails,
     "score_leads": _step_score,
@@ -391,7 +488,7 @@ def run_workflow_task(self, workflow_id: str) -> dict:
             try:
                 result = handler(db, wf.organization_id, ctx, step.get("config") or {})
                 # Merge updates that look like context keys.
-                for k in ("company_ids", "contact_ids", "icp_id"):
+                for k in ("company_ids", "contact_ids", "icp_id", "sent_company_ids"):
                     if k in result and result[k] is not None:
                         ctx[k] = result[k]
                 step_results.append({"id": step["id"], "type": step["type"], "result": result})

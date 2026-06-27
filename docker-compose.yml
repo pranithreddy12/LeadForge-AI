@@ -86,7 +86,9 @@ services:
       - ./frontend:/app
       - /app/node_modules
       - /app/.next
-    command: pnpm dev
+    # Production mode — far snappier than `next dev` (no per-route recompile, which is
+    # the source of the dashboard lag on Docker-for-Windows). Rebuilds then serves.
+    command: sh -c "pnpm build && pnpm start"
 
 volumes:
   pgdata:

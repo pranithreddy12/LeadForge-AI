@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import email
 import imaplib
+import re
 from email.header import decode_header, make_header
 
 from celery import shared_task
@@ -60,28 +61,56 @@ def _body_snippet(msg) -> str:
         return ""
 
 
+def _header_message_ids(msg) -> list[str]:
+    """All <message-id> tokens from the reply's In-Reply-To + References headers."""
+    out: list[str] = []
+    for h in ("In-Reply-To", "References"):
+        v = msg.get(h)
+        if v:
+            out += re.findall(r"<[^>]+>", v)
+    return out
+
+
+def match_inbound(msg, sender_index: dict, mid_index: dict):
+    """Match an inbound reply to a sent EmailMessage. Returns (message_or_None, how):
+      'sender'  — primary: inbound From == sent recipient.
+      'header'  — secondary: In-Reply-To/References Message-ID == the stamped one
+                  (robust to replies from a DIFFERENT address than received).
+      'none'    — no match (caller logs it, never silently drops)."""
+    m = sender_index.get(_from_addr(msg))
+    if m:
+        return m, "sender"
+    for mid in _header_message_ids(msg):
+        m = mid_index.get(mid.strip())
+        if m:
+            return m, "header"
+    return None, "none"
+
+
 @shared_task(name="app.workers.inbox.poll_replies")
 def poll_replies(max_messages: int = 30) -> dict:
     if not _imap_configured():
         return {"skipped": "gmail_not_configured"}
 
-    # Build the recipient->sent-message index across all orgs that have sent mail.
     with task_session() as db:
+        from app.services.email_sender import sent_messageid_index
         org_ids = db.execute(
             select(EmailMessage.organization_id)
             .where(EmailMessage.status == "sent").distinct()
         ).scalars().all()
-        index: dict[str, EmailMessage] = {}
+        sender_index: dict[str, EmailMessage] = {}
+        mid_index: dict[str, EmailMessage] = {}
         for oid in org_ids:
-            index.update(sent_message_index(db, oid))
+            sender_index.update(sent_message_index(db, oid))
+            mid_index.update(sent_messageid_index(db, oid))
 
-        if not index:
+        if not sender_index and not mid_index:
             return {"replies": 0, "note": "no_sent_emails_to_match"}
 
-        replies = 0
+        replies = unmatched = 0
         try:
             imap = imaplib.IMAP4_SSL("imap.gmail.com", 993)
-            imap.login(settings.gmail_address, settings.gmail_app_password)
+            imap.login(settings.gmail_address, settings.gmail_app_password.replace(" ", "").strip())
             imap.select("INBOX")
             _typ, data = imap.search(None, "UNSEEN")
             ids = (data[0].split() if data and data[0] else [])[:max_messages]
@@ -90,18 +119,26 @@ def poll_replies(max_messages: int = 30) -> dict:
                 if not raw or not raw[0]:
                     continue
                 msg = email.message_from_bytes(raw[0][1])
-                sender = _from_addr(msg)
-                match = index.get(sender)
+                match, how = match_inbound(msg, sender_index, mid_index)
                 if not match:
-                    continue  # leave unrelated mail UNSEEN
+                    unmatched += 1
+                    subj = str(make_header(decode_header(msg.get("Subject", "")))) if msg.get("Subject") else ""
+                    log.warning(
+                        "unmatched_reply", sender=_from_addr(msg), subject=subj[:120],
+                        note="no sent message found for this sender — reply may have come "
+                             "from a different address than the one that received it")
+                    continue  # leave UNSEEN; not silently dropped — it's logged
+                if how == "header":
+                    log.info("reply_secondary_match", sender=_from_addr(msg),
+                             matched_by="In-Reply-To/References header")
                 replies += _record_reply(db, match, msg)
                 imap.store(mid, "+FLAGS", "\\Seen")
             imap.logout()
         except Exception as e:
             log.warning("imap_poll_failed", error=str(e))
-            return {"replies": replies, "error": str(e)[:160]}
+            return {"replies": replies, "unmatched": unmatched, "error": str(e)[:160]}
 
-        return {"replies": replies}
+        return {"replies": replies, "unmatched": unmatched}
 
 
 def _record_reply(db, message: EmailMessage, msg) -> int:

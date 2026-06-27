@@ -77,6 +77,9 @@ class Settings(BaseSettings):
     # Search providers
     tavily_api_key: str = ""
     serper_api_key: str = ""
+    # Google Places (New) — compliant local-business discovery (category + city).
+    # Needs a Google Cloud project with Places API enabled + billing on.
+    google_maps_api_key: str = ""
 
     # Email validation
     hunter_api_key: str = ""

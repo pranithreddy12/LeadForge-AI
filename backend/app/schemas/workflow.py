@@ -8,7 +8,10 @@ from pydantic import BaseModel, ConfigDict, Field
 
 StepType = Literal[
     "discover_companies",
+    "discover_local",
+    "discover_places",
     "enrich",
+    "detect_local_signals",
     "find_contacts",
     "detect_signals",
     "validate_emails",

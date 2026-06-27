@@ -20,6 +20,7 @@ celery = Celery(
         "app.workers.enrichment",
         "app.workers.research",
         "app.workers.inbox",
+        "app.workers.reclassify",
     ],
 )
 
@@ -66,5 +67,9 @@ celery.conf.beat_schedule = {
     "poll-email-replies-every-5m": {
         "task": "app.workers.inbox.poll_replies",
         "schedule": crontab(minute="*/5"),
+    },
+    "retry-held-unknowns-hourly": {
+        "task": "app.workers.reclassify.retry_held_unknowns",
+        "schedule": crontab(minute="17"),
     },
 }

@@ -18,9 +18,15 @@ class ICP(Base, UUIDPk, Timestamps):
     project_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("projects.id", ondelete="CASCADE"), index=True
     )
+    # Denormalized org so a partial-unique index can enforce one active ICP per org.
+    organization_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("organizations.id", ondelete="CASCADE"), index=True
+    )
     name: Mapped[str] = mapped_column(String(200))
     summary: Mapped[str | None] = mapped_column(Text)
-    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    # Exactly ONE active ICP per org (DB partial-unique index uq_icp_one_active_per_org
+    # + the activate_icp() service). Default FALSE so creating an ICP never auto-activates.
+    is_active: Mapped[bool] = mapped_column(Boolean, default=False)
 
     industries: Mapped[list[str]] = mapped_column(ARRAY(String), default=list)
     sub_industries: Mapped[list[str]] = mapped_column(ARRAY(String), default=list)

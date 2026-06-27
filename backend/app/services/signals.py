@@ -90,6 +90,39 @@ def detect_for_company(db: Session, company: Company, icp_keywords: list[str]) -
     return _persist_signals(db, company, found)
 
 
+def _coerce_observed_at(val):
+    """LLM/SERP dates come in messy ('2026-06', '2026', 'June 2026', full ISO). The
+    column is TIMESTAMPTZ, so a partial like '2026-06' crashes the insert. Coerce to a
+    real datetime (partials -> first of month/year), else None — never raise."""
+    import re
+    from datetime import datetime
+    if not val or not isinstance(val, str):
+        return val if not isinstance(val, str) else None
+    s = val.strip()
+    if not s:
+        return None
+    m = re.match(r"^(\d{4})-(\d{2})-(\d{2})", s)
+    if m:
+        try:
+            return datetime(int(m[1]), int(m[2]), int(m[3]))
+        except ValueError:
+            return None
+    m = re.match(r"^(\d{4})-(\d{2})$", s)      # 2026-06 -> 2026-06-01
+    if m:
+        try:
+            return datetime(int(m[1]), int(m[2]), 1)
+        except ValueError:
+            return None
+    if re.match(r"^\d{4}$", s):                # 2026 -> 2026-01-01
+        return datetime(int(s), 1, 1)
+    for fmt in ("%B %Y", "%b %Y", "%B %d, %Y", "%b %d, %Y", "%d %B %Y", "%m/%d/%Y", "%Y/%m/%d"):
+        try:
+            return datetime.strptime(s, fmt)
+        except ValueError:
+            continue
+    return None
+
+
 def _persist_signals(db: Session, company: Company, found: list[dict]) -> list[Signal]:
     if not found:
         return []
@@ -127,7 +160,7 @@ def _persist_signals(db: Session, company: Company, found: list[dict]) -> list[S
             confidence=float(s.get("confidence") or 0.7),
             url=s.get("url"),
             source=s.get("source"),
-            observed_at=s.get("observed_at"),
+            observed_at=_coerce_observed_at(s.get("observed_at")),
             payload=s.get("payload") or {},
         )
         db.add(row)

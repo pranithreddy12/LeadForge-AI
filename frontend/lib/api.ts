@@ -17,14 +17,21 @@ async function withAuth(): Promise<HeadersInit> {
   // request as the seeded demo user, so unauthenticated calls succeed.
   if (!clerkConfigured) return {};
 
-  if (typeof window === "undefined") {
-    // Server component / route handler: pull the token from the Clerk session.
-    const { auth } = await import("@clerk/nextjs/server");
-    const { getToken } = await auth();
-    const token = await getToken();
-    return token ? { Authorization: `Bearer ${token}` } : {};
+  // Browser with Clerk: pull the session token from the CLIENT SDK. We must NOT
+  // import "@clerk/nextjs/server" here — this module is imported by client
+  // components, and the server entry pulls in "server-only", which breaks the
+  // production build. The Clerk client global is the client-safe source.
+  if (typeof window !== "undefined") {
+    try {
+      const token = await (
+        window as unknown as { Clerk?: { session?: { getToken?: () => Promise<string | null> } } }
+      ).Clerk?.session?.getToken?.();
+      return token ? { Authorization: `Bearer ${token}` } : {};
+    } catch {
+      return {};
+    }
   }
-  // Browser: rely on Clerk's fetch wrapper attaching the session cookie via middleware.
+  // Server context: proxied calls rely on the middleware/session cookie.
   return {};
 }
 

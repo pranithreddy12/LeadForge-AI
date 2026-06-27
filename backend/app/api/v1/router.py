@@ -16,6 +16,7 @@ from app.api.v1.routes import (
     dashboard,
     billing,
     webhooks,
+    settings,
 )
 
 api_router = APIRouter()
@@ -34,3 +35,4 @@ api_router.include_router(chat.router)
 api_router.include_router(dashboard.router)
 api_router.include_router(billing.router)
 api_router.include_router(webhooks.router)
+api_router.include_router(settings.router)

@@ -14,6 +14,7 @@ def list_opportunities(db: Session, *, organization_id: uuid.UUID,
                        min_score: int = 0, limit: int = 50, offset: int = 0) -> list[dict]:
     """Companies joined with their latest score + opportunity reasoning,
     ranked by score descending. This is the intelligence view."""
+    from app.services.leadpool import buyer_only
     from app.services.scoring import latest_score_ids_select
     latest_ids = latest_score_ids_select(organization_id).subquery()
 
@@ -23,6 +24,7 @@ def list_opportunities(db: Session, *, organization_id: uuid.UUID,
         .where(LeadScore.id.in_(select(latest_ids.c.id)))
         .where(Company.organization_id == organization_id)
         .where(LeadScore.score >= min_score)
+        .where(buyer_only())   # P1 #9: vendors/competitors/VCs never surface as leads
         .order_by(LeadScore.score.desc())
         .offset(offset)
         .limit(limit)
@@ -63,11 +65,14 @@ def list_opportunities(db: Session, *, organization_id: uuid.UUID,
 
 
 def opportunity_stats(db: Session, *, organization_id: uuid.UUID) -> dict:
+    from app.services.leadpool import buyer_only
     from app.services.scoring import latest_score_ids_select
     latest_ids = latest_score_ids_select(organization_id).subquery()
     rows = db.execute(
         select(LeadScore.grade, LeadScore.score)
+        .join(Company, Company.id == LeadScore.company_id)
         .where(LeadScore.id.in_(select(latest_ids.c.id)))
+        .where(buyer_only())   # P1 #9: stats reflect buyer-classified leads only
     ).all()
     if not rows:
         return {"total_scored": 0, "hot": 0, "warm": 0, "cold": 0, "avg_score": 0.0}

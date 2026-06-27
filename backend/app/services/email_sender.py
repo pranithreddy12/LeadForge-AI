@@ -31,8 +31,14 @@ _CONTACTED_OR_BEYOND = {"contacted", "replied", "meeting", "proposal", "won", "l
 _ALREADY_SENT_STATUSES = ("sent", "replied", "bounced")
 
 
+def _app_password() -> str:
+    # Google displays app passwords as "xxxx xxxx xxxx xxxx"; users often paste the
+    # spaces. SMTP/IMAP AUTH needs the bare 16 chars — strip whitespace defensively.
+    return (settings.gmail_app_password or "").replace(" ", "").strip()
+
+
 def is_configured() -> bool:
-    return bool(settings.gmail_address and settings.gmail_app_password)
+    return bool(settings.gmail_address and _app_password())
 
 
 def stamp_message_id() -> str:
@@ -80,9 +86,10 @@ def suppression_reason(db: Session, company: Company,
     return "; ".join(reasons) if reasons else None
 
 
-def _send_raw(*, to_addr: str, subject: str, body: str, message_id: str) -> None:
+def _send_raw(*, to_addr: str, subject: str, body: str, message_id: str,
+              from_addr: str, app_password: str) -> None:
     msg = MIMEMessage()
-    msg["From"] = formataddr((settings.gmail_from_name, settings.gmail_address))
+    msg["From"] = formataddr((settings.gmail_from_name, from_addr))
     msg["To"] = to_addr
     msg["Subject"] = subject
     msg["Message-ID"] = message_id
@@ -91,7 +98,7 @@ def _send_raw(*, to_addr: str, subject: str, body: str, message_id: str) -> None
     ctx = ssl.create_default_context()
     with smtplib.SMTP("smtp.gmail.com", 587, timeout=20) as server:
         server.starttls(context=ctx)
-        server.login(settings.gmail_address, settings.gmail_app_password)
+        server.login(from_addr, app_password.replace(" ", "").strip())
         server.send_message(msg)
 
 
@@ -108,14 +115,20 @@ def sent_today_count(db: Session, organization_id) -> int:
 
 
 def daily_cap_remaining(db: Session, organization_id) -> int:
-    return max(0, settings.max_emails_per_day - sent_today_count(db, organization_id))
+    from app.services.settings_resolver import resolve_caps
+    _run, per_day = resolve_caps(db, organization_id)
+    return max(0, per_day - sent_today_count(db, organization_id))
 
 
 def send_email_message(db: Session, message: EmailMessage) -> dict:
     """Send one drafted EmailMessage via Gmail. Marks it sent + stores Message-ID.
 
+    Gmail creds resolve from the org's Settings, falling back to .env (logged).
     Returns a status dict; never raises (failures are recorded on the row)."""
-    if not is_configured():
+    from app.services.settings_resolver import resolve_credential
+    from_addr = resolve_credential(db, message.organization_id, "gmail_address")
+    app_pw = resolve_credential(db, message.organization_id, "gmail_app_password")
+    if not (from_addr and app_pw):
         return {"sent": False, "reason": "gmail_not_configured"}
     if message.channel != "email":
         return {"sent": False, "reason": "not_email_channel"}
@@ -146,7 +159,7 @@ def send_email_message(db: Session, message: EmailMessage) -> dict:
     message_id = stamp_message_id()
     try:
         _send_raw(to_addr=to_addr, subject=message.subject, body=message.body,
-                  message_id=message_id)
+                  message_id=message_id, from_addr=from_addr, app_password=app_pw)
     except Exception as e:
         log.warning("gmail_send_failed", error=str(e))
         message.status = "bounced"
@@ -163,19 +176,34 @@ def send_email_message(db: Session, message: EmailMessage) -> dict:
     return {"sent": True, "to": to_addr, "message_id": message_id}
 
 
-def sent_message_index(db: Session, organization_id: uuidlib.UUID) -> dict[str, EmailMessage]:
-    """Map of {recipient_email_lower: EmailMessage} for sent, not-yet-replied
-    emails — used by the reply poller to match inbound mail to an outreach."""
+def _sent_rows(db: Session, organization_id: uuidlib.UUID) -> list[EmailMessage]:
     from sqlalchemy import select
-    rows = db.execute(
+    return db.execute(
         select(EmailMessage).where(
             EmailMessage.organization_id == organization_id,
             EmailMessage.status == "sent",
         )
     ).scalars().all()
+
+
+def sent_message_index(db: Session, organization_id: uuidlib.UUID) -> dict[str, EmailMessage]:
+    """Map of {recipient_email_lower: EmailMessage} for sent, not-yet-replied
+    emails — primary reply match (inbound sender -> sent recipient)."""
     out: dict[str, EmailMessage] = {}
-    for m in rows:
+    for m in _sent_rows(db, organization_id):
         to = (m.meta or {}).get("to")
         if to:
             out[to.lower()] = m
+    return out
+
+
+def sent_messageid_index(db: Session, organization_id: uuidlib.UUID) -> dict[str, EmailMessage]:
+    """Map of {stamped Message-ID -> EmailMessage} — SECONDARY reply match via the
+    inbound reply's In-Reply-To / References headers (robust to a reply arriving from a
+    different address than the one that received it)."""
+    out: dict[str, EmailMessage] = {}
+    for m in _sent_rows(db, organization_id):
+        mid = (m.meta or {}).get("message_id")
+        if mid:
+            out[mid.strip()] = m
     return out

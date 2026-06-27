@@ -35,11 +35,15 @@ def draft_outreach_for_company(organization_id: str, company_id: str,
         if reason:
             log.info("outreach_suppressed", company=str(company.id), reason=reason)
             return {"created": 0, "suppressed": reason}
+        # Prefer a contact that actually HAS an email (else the send bounces) — pick
+        # the highest-influence emailable one; fall back to any contact for the draft.
         contact = db.execute(
-            select(Contact).where(Contact.company_id == company.id, Contact.is_primary.is_(True))
+            select(Contact).where(Contact.company_id == company.id,
+                                  Contact.email.is_not(None))
+            .order_by(Contact.influence_score.desc().nullslast()).limit(1)
         ).scalar_one_or_none() or db.execute(
             select(Contact).where(Contact.company_id == company.id)
-            .order_by(Contact.created_at.desc()).limit(1)
+            .order_by(Contact.is_primary.desc(), Contact.created_at.desc()).limit(1)
         ).scalar_one_or_none()
 
         icp = db.get(ICP, company.icp_id) if company.icp_id else None
@@ -47,12 +51,17 @@ def draft_outreach_for_company(organization_id: str, company_id: str,
             select(Signal).where(Signal.company_id == company.id).limit(15)
         ).scalars().all()
 
+        # Mode + tone from Settings: local businesses get the Places-grounded path.
+        from app.services.settings_resolver import settings_row
+        s = settings_row(db, company.organization_id)
+        is_local = bool(s and s.discovery_mode == "local")
+        eff_tone = (s.outreach_tone if s else None) or tone
         raw = generate_outreach(
             company=_row(company),
             contact=_row(contact),
             icp=_row(icp),
-            signals=[_row(s) for s in signals],
-            channel=channel, tone=tone,
+            signals=[_row(s_) for s_ in signals],
+            channel=channel, tone=eff_tone, local=is_local,
         )
         variants = raw.get("variants") or []
         if not variants:

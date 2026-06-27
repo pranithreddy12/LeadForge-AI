@@ -45,6 +45,11 @@ class DiscoveredCompany:
     # retry can re-classify and outreach can suppress them) but kept OUT of the scoring
     # pipeline until confirmed.
     classification_status: str | None = None
+    classification_label: str | None = None   # gate verdict: buyer | vendor | ... | unknown
+    # Raw Google Places payload (rating, review_count, reviews, phone) for local-SMB
+    # discovery — persisted to company.raw["places"] so the review-signal detector and
+    # local outreach can reference real data.
+    places_data: dict | None = None
 
 
 def _domain_from_url(url: str) -> str | None:
@@ -195,6 +200,8 @@ def discover_via_search(icp: ICP, *, limit: int = 25,
             confidence=a["confidence"],
             ai_verified=a.get("ai_verified", True),
             signal=c.signal,
+            classification_status=None,        # None status = active buyer
+            classification_label="buyer",      # explicit gate verdict
         ))
     # `held` (unknown / provider-error) candidates ARE persisted, marked held_unknown,
     # so a future pass can re-classify them and outreach can suppress them — but they
@@ -209,7 +216,7 @@ def discover_via_search(icp: ICP, *, limit: int = 25,
             name=_clean_held_name(c), domain=c.domain, website=f"https://{c.domain}",
             description=(c.snippet or "")[:1000] or None, linkedin_url=None,
             source=c.source, industry=None, confidence=None, ai_verified=False,
-            signal=c.signal, classification_status="held_unknown",
+            signal=c.signal, classification_status="held_unknown", classification_label="unknown",
         ))
     if held:
         log.info("discovery_held_unknown", n=len(held),
@@ -220,6 +227,139 @@ def discover_via_search(icp: ICP, *, limit: int = 25,
 def _clean_held_name(c) -> str:
     from app.ai.qualification_engine import _clean_title
     return _clean_title(c.title) or (c.domain or "unknown")
+
+
+def reclassify_existing(db: Session, *, organization_id: uuid.UUID,
+                        seller_description: str | None = None) -> dict:
+    """Re-run the gate on already-persisted companies and store the REAL label, so
+    vendors/competitors/VCs that slipped in (or predate the gate) get excluded from the
+    lead pool. Returns {name: (old, new)} for changed rows. NOTHING-STATIC: an
+    `unknown` verdict (provider error / low confidence) never overwrites a prior label."""
+    from app.ai.qualification_engine import Candidate, classify_candidates
+    companies = db.execute(
+        select(Company).where(Company.organization_id == organization_id)
+    ).scalars().all()
+    if not companies:
+        return {}
+    cands = [Candidate(title=c.name, url=c.website or "", domain=c.domain,
+                       snippet=c.description, source=c.source or "db") for c in companies]
+    judged = classify_candidates(cands, seller_description=seller_description)
+    by_idx = {j["index"]: j for j in judged}
+    changes: dict[str, tuple] = {}
+    for i, c in enumerate(companies):
+        j = by_idx.get(i)
+        if not j or j["label"] == "unknown":
+            continue
+        label = j["label"]
+        status = None if label == "buyer" else "rejected"  # verdict -> pipeline state
+        if c.classification_label != label or c.classification_status != status:
+            changes[c.name] = (c.classification_label, label)
+            c.classification_label = label
+            c.classification_status = status
+    db.commit()
+    log.info("reclassify_existing", n=len(companies), changed=len(changes))
+    return changes
+
+
+def discover_local_businesses(db: Session, *, organization_id: uuid.UUID, icp: ICP,
+                              business_types: list[str], locations: list[str],
+                              min_reviews: int = 10, max_results: int = 20,
+                              api_key: str | None = None,
+                              seller_description: str | None = None) -> tuple[list, dict]:
+    """Google Places local discovery (Step 5). For each business_type x location: Text
+    Search -> filter (closed / < min_reviews / no website) -> normalize to Candidate ->
+    run the SAME qualification gate (vendors/junk rejected) -> persist buyers with their
+    Places payload. NOTHING-STATIC: no key / provider error -> persist nothing.
+    Returns (persisted_companies, stats)."""
+    from urllib.parse import urlparse
+
+    from app.ai.qualification_engine import Candidate, qualify_candidates
+    from app.services.places import search_local_businesses
+    from app.services.serp_filter import registrable_domain
+
+    raw: dict[str, Candidate] = {}
+    places_by_domain: dict[str, dict] = {}
+    stats = {"places_returned": 0, "after_filters": 0, "provider_error": False}
+    for bt in business_types:
+        for loc in locations:
+            res = search_local_businesses(f"{bt} in {loc}", max_results=max_results, api_key=api_key)
+            if res.get("_provider_error"):
+                stats["provider_error"] = True
+                continue
+            for b in res["results"]:
+                stats["places_returned"] += 1
+                if b.get("business_status") and b["business_status"] != "OPERATIONAL":
+                    continue
+                if (b.get("review_count") or 0) < min_reviews:
+                    continue
+                web = b.get("website")
+                if not web:
+                    continue  # no website -> can't email
+                dom = registrable_domain(urlparse(web).netloc)
+                if not dom or _is_excluded(dom) or dom in raw:
+                    continue
+                raw[dom] = Candidate(
+                    title=b.get("name") or dom, url=web, domain=dom, source="places",
+                    snippet=(f"{bt} in {loc}. {b.get('rating')} stars, "
+                             f"{b.get('review_count')} reviews. {b.get('address') or ''}"))
+                places_by_domain[dom] = b
+            if len(raw) >= max_results:
+                break
+        if len(raw) >= max_results:
+            break
+    stats["after_filters"] = len(raw)
+    cands = list(raw.values())[:max_results]
+    if not cands:
+        return [], stats
+
+    accepted, gate_stats, _held = qualify_candidates(cands, seller_description=seller_description)
+    stats.update({f"gate_{k}": v for k, v in gate_stats.items() if k != "by_label"})
+    out: list[DiscoveredCompany] = []
+    for a in accepted:
+        c: Candidate = a["candidate"]
+        pd = places_by_domain.get(c.domain, {})
+        out.append(DiscoveredCompany(
+            name=a["company_name"] or c.title, domain=c.domain, website=c.url,
+            description=pd.get("address"), linkedin_url=None, source="places",
+            industry=pd.get("type"), confidence=a["confidence"], ai_verified=True,
+            classification_status=None, classification_label="buyer", places_data=pd))
+    rows = persist_candidates(db, organization_id=organization_id, icp=icp, candidates=out)
+    return rows, stats
+
+
+def discover_via_places(icp: ICP, *, limit: int = 20,
+                        queries: list[str] | None = None) -> list[DiscoveredCompany]:
+    """Local-SMB discovery via Google Places (compliant). Each query is a
+    'category in city' phrase (from the ICP's search_queries or `queries`). Returns
+    businesses that have a website (needed for email scraping); phone/address are kept
+    in the description for future call campaigns. NOTHING-STATIC: provider error -> skip."""
+    from urllib.parse import urlparse
+
+    from app.services.places import search_local_businesses
+    from app.services.serp_filter import registrable_domain
+
+    qlist = queries or [q for q in (getattr(icp, "search_queries", None) or []) if q]
+    raw: dict[str, DiscoveredCompany] = {}
+    for q in qlist:
+        res = search_local_businesses(q, max_results=20)
+        if res.get("_provider_error"):
+            continue
+        for b in res["results"]:
+            web = b.get("website")
+            if not web:
+                continue  # need a site to scrape an email for outreach
+            dom = registrable_domain(urlparse(web).netloc)
+            if not dom or _is_excluded(dom) or dom in raw:
+                continue
+            desc = " | ".join(x for x in (b.get("type"), b.get("phone"), b.get("address")) if x)
+            raw[dom] = DiscoveredCompany(
+                name=b.get("name") or dom, domain=dom, website=web,
+                description=desc or None, linkedin_url=None, source="places",
+                industry=b.get("type"), confidence=90, ai_verified=True,
+            )
+        if len(raw) >= limit:
+            break
+    return list(raw.values())[:limit]
 
 
 def _collect(seen: dict, title: str | None, url: str | None, snippet: str | None,
@@ -266,8 +406,10 @@ def persist_candidates(
             industry=c.industry,
             source=c.source,
             classification_status=c.classification_status,
+            classification_label=c.classification_label,
             raw={"qualification_confidence": c.confidence,
-                 "ai_verified": c.ai_verified},
+                 "ai_verified": c.ai_verified,
+                 **({"places": c.places_data} if c.places_data else {})},
         )
         db.add(row)
         out.append((row, c.signal))

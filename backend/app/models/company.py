@@ -53,9 +53,13 @@ class Company(Base, UUIDPk, Timestamps):
         String(20), default="new", server_default="new", index=True
     )  # new | qualified | contacted | replied | meeting | proposal | won | lost
     source: Mapped[str | None] = mapped_column(String(40))   # tavily | serper | manual | csv | playwright
-    # Qualification gate (1B) outcome. null = classified buyer / legacy row. "held_unknown" = the gate
-    # could not confirm buyer (e.g. provider error) -> must NOT be drafted until re-classified.
+    # Pipeline STATE: null = active buyer/legacy, "held_unknown" = provider error (retry),
+    # "rejected" = a definitive non-buyer the retry confirmed (permanently excluded).
     classification_status: Mapped[str | None] = mapped_column(String(30))
+    # Gate VERDICT ("what it is"): buyer | vendor | competitor | investor_vc |
+    # job_board_or_directory | listicle_or_content | too_large | unknown. Scoring caps any
+    # non-buyer at F/<=40 so a vendor can never be the top lead (BUG 5).
+    classification_label: Mapped[str | None] = mapped_column(String(30))
     last_enriched_at: Mapped[str | None] = mapped_column(DateTime(timezone=True))
     embedding = mapped_column(Vector(settings.openai_embedding_dim), nullable=True)
     embedding_pending: Mapped[bool] = mapped_column(Boolean, default=True, index=True)

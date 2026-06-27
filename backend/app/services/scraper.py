@@ -153,6 +153,53 @@ def fetch_raw_html(url: str, *, timeout: float = 15.0) -> str:
         return ""
 
 
+# ---- contact-email scraping (no API; SSRF-guarded via fetch_raw_html) ----------
+
+_EMAIL_RE = re.compile(r"[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}")
+_CONTACT_PATHS = ("", "/contact", "/contact-us", "/contactus", "/about",
+                  "/about-us", "/company", "/team", "/get-in-touch", "/support")
+# local-parts/domains that are never a real outreach address
+_EMAIL_JUNK_LOCAL = ("noreply", "no-reply", "donotreply", "postmaster", "abuse",
+                     "mailer-daemon", "example", "your", "name", "email", "user")
+_EMAIL_ASSET_SUFFIX = (".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".css",
+                       ".js", ".ico", ".woff", ".woff2")
+_EMAIL_JUNK_DOMAINS = ("example.com", "sentry.io", "wixpress.com", "godaddy.com",
+                       "schema.org", "w3.org", "domain.com", "email.com", "yourdomain.com")
+
+
+def _registrable(host: str) -> str:
+    parts = (host or "").lower().lstrip("www.").split(".")
+    return ".".join(parts[-2:]) if len(parts) >= 2 else (host or "").lower()
+
+
+def scrape_emails_for_domain(domain: str, *, max_pages: int = 6) -> list[str]:
+    """Scrape role/contact emails from a company's own website (homepage + common
+    contact/about pages). Returns deduped, on-domain emails only — no external API.
+    Junk (noreply, asset filenames, third-party domains) is filtered out."""
+    if not domain:
+        return []
+    reg = _registrable(domain)
+    found: dict[str, None] = {}
+    for path in _CONTACT_PATHS[:max_pages]:
+        html = fetch_raw_html(f"https://{domain}{path}")
+        if not html:
+            continue
+        for raw in _EMAIL_RE.findall(html):
+            e = raw.strip().strip(".").lower()
+            local, _, dom = e.partition("@")
+            if not dom or dom in _EMAIL_JUNK_DOMAINS:
+                continue
+            if e.endswith(_EMAIL_ASSET_SUFFIX):
+                continue
+            if any(j in local for j in _EMAIL_JUNK_LOCAL):
+                continue
+            # only the company's OWN domain (drop partner/CDN/tracking emails)
+            if _registrable(dom) != reg:
+                continue
+            found.setdefault(e, None)
+    return list(found.keys())
+
+
 # Heuristics for finding the careers/jobs page of a domain.
 CAREER_HINT_PATTERNS = [
     "/careers", "/jobs", "/work-with-us", "/join", "/hiring",

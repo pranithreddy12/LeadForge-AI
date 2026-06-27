@@ -326,11 +326,21 @@ SEND path BEFORE any real email goes out.
     headroom; and the exact email that WOULD be sent — subject, first line, and the **Message-ID that
     would be stamped**. If any field is missing or fabricated, 2A is NOT done. (Requiring the real
     Message-ID forces the actual stamping logic to run, not a mock.)
-- **2B — live smoke test (only once the 4 creds are in `.env`).** FORWARD WARNING: smoke-test against
-  a test address YOU control BEFORE any real prospect. `inbox.py` matches replies by sender-email →
-  sent-recipient-email; if the test mailbox replies from a DIFFERENT From than it received on (some
-  clients rewrite the From header), the match silently fails. Verify the round-trip with your own
-  address first.
+- **2B DONE — live smoke test passed end-to-end.** Real Gmail SMTP send → delivered to inbox (IMAP-
+  confirmed, not spam); Telegram daily-summary fired; reply detected → matched sender→recipient →
+  `EmailMessage` + `Company` flipped to `replied` → CRM activity logged → exactly ONE Telegram reply
+  alert; re-poll idempotent (0 duplicate). **THE CORE DAILY LOOP IS FUNCTIONALLY COMPLETE.**
+  - **Two real findings (both fixed/noted):**
+    1. Gmail App Passwords are shown as `xxxx xxxx xxxx xxxx`; users paste the spaces (19 chars). SMTP/
+       IMAP AUTH needs the bare 16 — `email_sender._app_password()` + inbox.py now strip whitespace.
+    2. `docker compose restart` does NOT reload `.env` (env_file is read at create-time) — must
+       `docker compose up -d --force-recreate api worker beat` after editing `.env`.
+  - **Known artifact + hardening note for Phase 3:** the smoke test used send-to-self, and Gmail auto-
+    marks a self-reply `\Seen`, so `poll_replies` (which searches `UNSEEN`) skipped it — the match was
+    proven by processing the real reply directly. For REAL prospects replying from their own mailbox
+    the reply arrives `UNSEEN` and matches normally. HARDENING (3-phase): don't rely solely on
+    `UNSEEN` — also scan recent mail (e.g. `SINCE`) or track last-processed UID, relying on the
+    existing status-guard for idempotency, so a reply pre-read by another client isn't missed.
 
 > **FIRST ACTION for the 2B session:** bring Docker up, run
 > `docker compose exec api python -m app.cli eval` to confirm green (gate 100%/100%, separation 10/10,
