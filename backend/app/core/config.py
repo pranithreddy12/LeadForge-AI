@@ -97,6 +97,12 @@ class Settings(BaseSettings):
     telegram_bot_token: str = ""
     telegram_chat_id: str = ""
 
+    # WhatsApp outreach (Meta Cloud API) — graph.facebook.com/v18.0
+    whatsapp_phone_number_id: str = ""       # the FROM phone-number id (not the number)
+    whatsapp_access_token: str = ""          # Bearer token (System User / app token)
+    whatsapp_business_account_id: str = ""    # WABA id
+    whatsapp_verify_token: str = ""           # arbitrary string echoed in webhook GET verify
+
     # Storage
     aws_region: str = "us-east-1"
     aws_access_key_id: str = ""

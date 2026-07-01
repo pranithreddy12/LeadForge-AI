@@ -7,8 +7,10 @@ from app.models.contact import Contact  # noqa: F401
 from app.models.signal import Signal  # noqa: F401
 from app.models.scoring import LeadScore  # noqa: F401
 from app.models.campaign import Campaign, EmailMessage  # noqa: F401
+from app.models.whatsapp import WhatsAppMessage  # noqa: F401
 from app.models.crm import CRMActivity, CRMTask, PipelineStage  # noqa: F401
 from app.models.workflow import Workflow, WorkflowRun  # noqa: F401
 from app.models.billing import Subscription  # noqa: F401
 from app.models.research import AccountResearch  # noqa: F401
 from app.models.settings import Settings  # noqa: F401
+from app.models.manual_outreach import ManualOutreachLog  # noqa: F401

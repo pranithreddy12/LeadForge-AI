@@ -61,17 +61,52 @@ def notify_daily_summary(*, found: int, scored: int, hot: int, drafted: int,
     return send_message("\n".join(lines))
 
 
-def notify_reply(*, contact_name: str, company_name: str, subject: str,
-                 snippet: str, company_id: str | None = None) -> bool:
+def notify_reply_rich(*, channel: str, company_name: str, city: str | None = None,
+                      grade: str | None = None, score: int | None = None,
+                      signal: str | None = None, reply_text: str = "",
+                      suggested_response: str | None = None,
+                      phone: str | None = None, email: str | None = None,
+                      company_id: str | None = None) -> bool:
+    """Unified, actionable reply alert for BOTH email and WhatsApp (Section 4A):
+    who replied, why we reached out (grade/score + driving signal), their message, an
+    AI-suggested next response (omitted on LLM error), and their contact handles."""
     app_url = settings.app_public_url.rstrip("/")
-    link = f"\n{app_url}/leads/{company_id}" if company_id else ""
-    text = (
-        "<b>📨 New reply!</b>\n"
-        f"<b>{_esc(contact_name)}</b> at <b>{_esc(company_name)}</b> replied\n"
-        f"<i>Re: {_esc(subject)}</i>\n\n"
-        f"{_esc(snippet[:300])}{link}"
-    )
-    return send_message(text)
+    link = f"\n{app_url}/replies" if company_id else ""
+    where = f" {_esc(city)}" if city else ""
+    grade_line = ""
+    if grade or score is not None:
+        grade_line = f"\nScore: {_esc(grade) or '?'}/{score if score is not None else '?'}"
+        if signal:
+            grade_line += f" | Signal: {_esc(signal)}"
+    lines = [
+        "<b>REPLY RECEIVED</b>",
+        f"<b>{_esc(company_name)}</b>{where}{grade_line}",
+        f"Channel: {_esc(channel)}",
+        f"\n<b>Their message:</b>\n{_esc(reply_text[:600])}",
+    ]
+    if suggested_response:
+        lines.append(f"\n<b>Suggested response:</b>\n{_esc(suggested_response[:800])}")
+    contact_bits = []
+    if phone:
+        contact_bits.append(f"Phone: {_esc(phone)}")
+    if email:
+        contact_bits.append(f"Email: {_esc(email)}")
+    if contact_bits:
+        lines.append("\n" + "\n".join(contact_bits))
+    return send_message("\n".join(lines) + link)
+
+
+def notify_whatsapp_reply(*, company_name: str, city: str | None, grade: str | None,
+                          score: int | None, signal: str | None, reply_text: str,
+                          suggested_response: str | None = None,
+                          phone: str | None = None, email: str | None = None,
+                          company_id: str | None = None) -> bool:
+    """Thin WhatsApp wrapper over notify_reply_rich (kept for call-site clarity)."""
+    return notify_reply_rich(
+        channel="WhatsApp", company_name=company_name, city=city, grade=grade,
+        score=score, signal=signal, reply_text=reply_text,
+        suggested_response=suggested_response, phone=phone, email=email,
+        company_id=company_id)
 
 
 def _esc(s: str | None) -> str:

@@ -18,6 +18,8 @@ StepType = Literal[
     "score_leads",
     "generate_outreach",
     "send_emails",
+    "send_whatsapp",
+    "schedule_email_followup",
     "notify_telegram",
     "filter",
     "add_to_crm",
@@ -75,4 +77,5 @@ class WorkflowRunOut(BaseModel):
     items_in: int
     items_out: int
     step_results: list[dict]
+    run_leads: list[dict] = []
     created_at: datetime

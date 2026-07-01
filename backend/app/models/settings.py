@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import uuid
 
-from sqlalchemy import ForeignKey, Integer, String, Text
+from sqlalchemy import Boolean, ForeignKey, Integer, String, Text
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -42,6 +42,19 @@ class Settings(Base, UUIDPk, Timestamps):
     # ---- Outreach config ----
     outreach_mode: Mapped[list] = mapped_column(JSONB, default=lambda: ["email"])
     outreach_tone: Mapped[str] = mapped_column(String(20), default="professional")
+    # manual = draft only (review + send yourself on /today); automated = workflow sends.
+    # Safe-by-default: manual, so nothing goes out until you flip it on.
+    outreach_send_mode: Mapped[str] = mapped_column(String(12), default="manual")
+
+    # ---- Contact finding (how the pipeline discovers contact emails) ----
+    contact_find_hunter: Mapped[bool] = mapped_column(Boolean, default=True)    # Hunter.io domain search
+    contact_find_scrape: Mapped[bool] = mapped_column(Boolean, default=True)    # website email scrape
+    contact_find_linkedin: Mapped[bool] = mapped_column(Boolean, default=True)  # SERP LinkedIn names
+    validate_emails: Mapped[bool] = mapped_column(Boolean, default=True)        # Hunter/NeverBounce verify
+
+    # ---- Lead-quality filter (was hardcoded in the workflow) ----
+    filter_min_score: Mapped[int] = mapped_column(Integer, default=65)
+    filter_enforce_icp_size: Mapped[bool] = mapped_column(Boolean, default=True)
 
     # ---- Send limits (moved out of .env) ----
     max_emails_per_day: Mapped[int] = mapped_column(Integer, default=50)
@@ -53,3 +66,12 @@ class Settings(Base, UUIDPk, Timestamps):
     telegram_bot_token_enc: Mapped[str | None] = mapped_column(Text)          # encrypted
     telegram_chat_id: Mapped[str | None] = mapped_column(String(60))         # not secret
     google_places_api_key_enc: Mapped[str | None] = mapped_column(Text)      # encrypted
+
+    # ---- WhatsApp (Meta Cloud API) credentials ----
+    whatsapp_phone_number_id: Mapped[str | None] = mapped_column(String(60))      # not secret
+    whatsapp_business_account_id: Mapped[str | None] = mapped_column(String(60))  # not secret
+    whatsapp_access_token_enc: Mapped[str | None] = mapped_column(Text)           # encrypted
+    whatsapp_verify_token_enc: Mapped[str | None] = mapped_column(Text)           # encrypted
+
+    # ---- Contact enrichment ----
+    hunter_api_key_enc: Mapped[str | None] = mapped_column(Text)                  # encrypted

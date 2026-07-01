@@ -68,6 +68,10 @@ celery.conf.beat_schedule = {
         "task": "app.workers.inbox.poll_replies",
         "schedule": crontab(minute="*/5"),
     },
+    "send-scheduled-emails-hourly": {
+        "task": "app.workers.outreach.send_scheduled_emails",
+        "schedule": crontab(minute="23"),
+    },
     "retry-held-unknowns-hourly": {
         "task": "app.workers.reclassify.retry_held_unknowns",
         "schedule": crontab(minute="17"),

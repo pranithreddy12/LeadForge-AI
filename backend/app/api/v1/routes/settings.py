@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.core.config import settings as cfg
 from app.core.crypto import decrypt, encrypt
 from app.core.database import get_db
 from app.core.deps import current_org
@@ -37,14 +38,27 @@ def _serialize(s: Settings) -> SettingsOut:
         target_geography=s.target_geography or [],
         outreach_mode=s.outreach_mode or ["email"],
         outreach_tone=s.outreach_tone,
+        outreach_send_mode=s.outreach_send_mode or "manual",
         max_emails_per_day=s.max_emails_per_day,
         max_emails_per_run=s.max_emails_per_run,
+        contact_find_hunter=bool(s.contact_find_hunter),
+        contact_find_scrape=bool(s.contact_find_scrape),
+        contact_find_linkedin=bool(s.contact_find_linkedin),
+        validate_emails=bool(s.validate_emails),
+        filter_min_score=int(s.filter_min_score if s.filter_min_score is not None else 65),
+        filter_enforce_icp_size=bool(s.filter_enforce_icp_size),
+        whatsapp_webhook_url=f"{cfg.api_public_url.rstrip('/')}/api/v1/webhooks/whatsapp",
         credentials=CredentialStatus(
             gmail_address=s.gmail_address,
             telegram_chat_id=s.telegram_chat_id,
             gmail_app_password_set=bool(s.gmail_app_password_enc),
             telegram_bot_token_set=bool(s.telegram_bot_token_enc),
             google_places_api_key_set=bool(s.google_places_api_key_enc),
+            whatsapp_phone_number_id=s.whatsapp_phone_number_id,
+            whatsapp_business_account_id=s.whatsapp_business_account_id,
+            whatsapp_access_token_set=bool(s.whatsapp_access_token_enc),
+            whatsapp_verify_token_set=bool(s.whatsapp_verify_token_enc),
+            hunter_api_key_set=bool(s.hunter_api_key_enc),
         ),
     )
 
@@ -62,13 +76,20 @@ def update_settings(payload: SettingsUpdate, db: Session = Depends(get_db),
     for f in ("discovery_mode", "target_business_types", "target_locations",
               "search_radius_miles", "min_reviews", "max_results_per_run", "icp_name",
               "employee_min", "employee_max", "target_industries", "target_geography",
-              "outreach_mode", "outreach_tone", "max_emails_per_day", "max_emails_per_run"):
+              "outreach_mode", "outreach_tone", "outreach_send_mode",
+              "max_emails_per_day", "max_emails_per_run",
+              "contact_find_hunter", "contact_find_scrape", "contact_find_linkedin",
+              "validate_emails", "filter_min_score", "filter_enforce_icp_size"):
         setattr(s, f, getattr(payload, f))
     # non-secret identifiers
     if payload.gmail_address is not None:
         s.gmail_address = payload.gmail_address or None
     if payload.telegram_chat_id is not None:
         s.telegram_chat_id = payload.telegram_chat_id or None
+    if payload.whatsapp_phone_number_id is not None:
+        s.whatsapp_phone_number_id = payload.whatsapp_phone_number_id or None
+    if payload.whatsapp_business_account_id is not None:
+        s.whatsapp_business_account_id = payload.whatsapp_business_account_id or None
     # secrets — only rotate when a value is provided; empty string clears it
     if payload.gmail_app_password is not None:
         s.gmail_app_password_enc = encrypt(payload.gmail_app_password) or None
@@ -76,6 +97,12 @@ def update_settings(payload: SettingsUpdate, db: Session = Depends(get_db),
         s.telegram_bot_token_enc = encrypt(payload.telegram_bot_token) or None
     if payload.google_places_api_key is not None:
         s.google_places_api_key_enc = encrypt(payload.google_places_api_key) or None
+    if payload.whatsapp_access_token is not None:
+        s.whatsapp_access_token_enc = encrypt(payload.whatsapp_access_token) or None
+    if payload.whatsapp_verify_token is not None:
+        s.whatsapp_verify_token_enc = encrypt(payload.whatsapp_verify_token) or None
+    if payload.hunter_api_key is not None:
+        s.hunter_api_key_enc = encrypt(payload.hunter_api_key) or None
     db.commit()
     db.refresh(s)
 

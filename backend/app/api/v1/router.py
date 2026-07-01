@@ -17,6 +17,8 @@ from app.api.v1.routes import (
     billing,
     webhooks,
     settings,
+    replies,
+    today,
 )
 
 api_router = APIRouter()
@@ -36,3 +38,6 @@ api_router.include_router(dashboard.router)
 api_router.include_router(billing.router)
 api_router.include_router(webhooks.router)
 api_router.include_router(settings.router)
+api_router.include_router(replies.router)
+api_router.include_router(today.router)
+api_router.include_router(today.log_router)

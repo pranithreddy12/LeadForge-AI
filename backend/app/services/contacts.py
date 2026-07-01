@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 from app.core.logging import get_logger
 from app.models.company import Company
 from app.models.contact import Contact
-from app.services.email_validation import find_emails_for_domain, validate_email
+from app.services.email_validation import validate_email
 from app.services.search import serper_search
 
 log = get_logger(__name__)
@@ -78,13 +78,21 @@ def _icp_personas(db: Session, company: Company) -> list[str]:
 
 
 def discover_contacts_for_company(db: Session, company: Company) -> list[Contact]:
-    """Use Google site:linkedin.com/in/ queries and Hunter domain-search to find
-    decision makers. Persists Contact rows (deduped per (company, linkedin or email))."""
+    """Find decision-maker contacts. Email finding is Hunter-FIRST (highest-confidence
+    emails), falling back to website scraping when Hunter returns nothing. Also runs
+    SERP/LinkedIn discovery for names/titles. For LOCAL businesses the Places phone is
+    the PRIMARY contact (WhatsApp uses it); Hunter/scraped email is secondary.
+    Persists Contact rows (deduped per (company, linkedin or email or name))."""
+    from app.services.settings_resolver import (pipeline_config, resolve_credential,
+                                                settings_row)
+    s = settings_row(db, company.organization_id)
+    cfg = pipeline_config(db, company.organization_id)
+    is_local = bool(s and s.discovery_mode == "local")
     personas = _icp_personas(db, company)
     new_contacts: list[Contact] = []
 
-    # ---- 1. SERP-driven LinkedIn discovery -----------------------------------
-    for title in TARGET_TITLES:
+    # ---- 1. SERP-driven LinkedIn discovery (names/titles) --------------------
+    for title in (TARGET_TITLES if cfg["contact_find_linkedin"] else []):
         q = f'site:linkedin.com/in/ "{title}" "{company.name}"'
         for hit in serper_search(q, max_results=3):
             link = hit.get("link") or ""
@@ -98,32 +106,47 @@ def discover_contacts_for_company(db: Session, company: Company) -> list[Contact
             new_contacts.append(_make_contact(company, name=name, title=title,
                                               linkedin_url=li_url, personas=personas))
 
-    # ---- 2. Hunter domain search (gets emails too; no-op without HUNTER_API_KEY)
-    if company.domain:
-        for entry in find_emails_for_domain(company.domain):
-            fn = entry.get("first_name") or ""
-            ln = entry.get("last_name") or ""
-            name = (fn + " " + ln).strip() or entry.get("value") or ""
-            title = entry.get("position") or "Decision maker"
-            new_contacts.append(_make_contact(
-                company, name=name or "Unknown", title=title,
-                email=entry.get("value"),
-                linkedin_url=entry.get("linkedin"),
-                personas=personas,
-            ))
+    # ---- 2. LOCAL: the Places phone is the PRIMARY contact -------------------
+    places_phone = ((company.raw or {}).get("places") or {}).get("phone")
+    if places_phone:
+        from app.services.whatsapp_sender import normalize_phone
+        phone = normalize_phone(places_phone) or places_phone
+        new_contacts.append(_make_contact(
+            company, name=f"{company.name} (main line)", title="Owner/Manager",
+            phone=phone, personas=personas, is_primary=True))
 
-    # ---- 3. Website contact-page email scrape (free; SSRF-guarded) -----------
-    # Picks up role inboxes (info@/contact@/sales@) on the company's own domain so
-    # the daily pipeline has a real recipient without a paid email-finding API.
+    # ---- 3. Email: Hunter FIRST, website-scrape FALLBACK (both Settings-gated) ----
     if company.domain:
-        from app.services.scraper import scrape_emails_for_domain
-        for addr in scrape_emails_for_domain(company.domain):
-            local = addr.split("@")[0]
-            title = "Sales" if local in ("sales", "hello", "info", "contact") else "Contact"
-            new_contacts.append(_make_contact(
-                company, name=f"{company.name} ({local}@)", title=title,
-                email=addr, personas=personas,
-            ))
+        key = resolve_credential(db, company.organization_id, "hunter_api_key")
+        from app.services import hunter
+        hits = (hunter.find_email(company.domain, company.name, api_key=key or None)
+                if cfg["contact_find_hunter"] else [])
+        if hits:
+            for i, h in enumerate(hits):
+                fn, ln = (h.get("first_name") or ""), (h.get("last_name") or "")
+                name = (fn + " " + ln).strip() or h["email"]
+                new_contacts.append(_make_contact(
+                    company, name=name, title=h.get("position") or "Decision maker",
+                    email=h["email"], email_confidence=h["confidence"],
+                    personas=personas,
+                    # The single highest-confidence email is the primary contact in
+                    # B2B mode (in local mode the phone already claimed primary).
+                    is_primary=(i == 0 and not places_phone)))
+            log.info("contacts_source", company=str(company.id), source="hunter",
+                     n=len(hits), top_confidence=hits[0]["confidence"])
+        elif cfg["contact_find_scrape"]:
+            from app.services.scraper import scrape_emails_for_domain
+            scraped = scrape_emails_for_domain(company.domain)
+            for j, addr in enumerate(scraped):
+                local = addr.split("@")[0]
+                title = "Sales" if local in ("sales", "hello", "info", "contact") else "Contact"
+                new_contacts.append(_make_contact(
+                    company, name=f"{company.name} ({local}@)", title=title,
+                    email=addr, personas=personas,
+                    is_primary=(j == 0 and not places_phone)))
+            log.info("contacts_source", company=str(company.id),
+                     source="scraped", n=len(scraped),
+                     hunter_empty=True)
 
     persisted = _persist(db, company, new_contacts)
     return persisted
@@ -131,7 +154,10 @@ def discover_contacts_for_company(db: Session, company: Company) -> list[Contact
 
 def _make_contact(company: Company, *, name: str, title: str,
                   email: str | None = None,
+                  email_confidence: int | None = None,
+                  phone: str | None = None,
                   linkedin_url: str | None = None,
+                  is_primary: bool = False,
                   personas: list[str] | None = None) -> Contact:
     from app.services.contact_intelligence import compute_influence
     first, _, last = name.partition(" ")
@@ -153,7 +179,10 @@ def _make_contact(company: Company, *, name: str, title: str,
         influence_score=influence,
         buying_power=buying_power,
         email=email,
+        email_confidence=email_confidence,
+        phone=phone,
         linkedin_url=linkedin_url,
+        is_primary=is_primary,
     )
 
 

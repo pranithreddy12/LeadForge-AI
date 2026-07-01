@@ -12,6 +12,13 @@ class CredentialStatus(BaseModel):
     gmail_app_password_set: bool = False
     telegram_bot_token_set: bool = False
     google_places_api_key_set: bool = False
+    # WhatsApp (Meta Cloud API)
+    whatsapp_phone_number_id: str | None = None       # not secret -> shown
+    whatsapp_business_account_id: str | None = None   # not secret -> shown
+    whatsapp_access_token_set: bool = False
+    whatsapp_verify_token_set: bool = False
+    # Contact enrichment
+    hunter_api_key_set: bool = False
 
 
 class SettingsOut(BaseModel):
@@ -31,8 +38,19 @@ class SettingsOut(BaseModel):
     # outreach
     outreach_mode: list[str] = ["email"]
     outreach_tone: str = "professional"
+    outreach_send_mode: str = "manual"   # manual (draft only) | automated (workflow sends)
     max_emails_per_day: int = 50
     max_emails_per_run: int = 25
+    # contact finding
+    contact_find_hunter: bool = True
+    contact_find_scrape: bool = True
+    contact_find_linkedin: bool = True
+    validate_emails: bool = True
+    # lead-quality filter
+    filter_min_score: int = 65
+    filter_enforce_icp_size: bool = True
+    # read-only webhook URL to paste into the Meta console (WhatsApp)
+    whatsapp_webhook_url: str = ""
     # credentials — masked
     credentials: CredentialStatus
 
@@ -54,14 +72,27 @@ class SettingsUpdate(BaseModel):
     target_geography: list[str] = []
     outreach_mode: list[str] = ["email"]
     outreach_tone: Literal["professional", "friendly", "direct"] = "professional"
+    outreach_send_mode: Literal["manual", "automated"] = "manual"
     max_emails_per_day: int = Field(50, ge=0, le=2000)
     max_emails_per_run: int = Field(25, ge=0, le=500)
+    contact_find_hunter: bool = True
+    contact_find_scrape: bool = True
+    contact_find_linkedin: bool = True
+    validate_emails: bool = True
+    filter_min_score: int = Field(65, ge=0, le=100)
+    filter_enforce_icp_size: bool = True
     # credentials (optional plaintext)
     gmail_address: str | None = None
     gmail_app_password: str | None = None
     telegram_bot_token: str | None = None
     telegram_chat_id: str | None = None
     google_places_api_key: str | None = None
+    # WhatsApp (Meta Cloud API) — ids are not secret, token/verify are
+    whatsapp_phone_number_id: str | None = None
+    whatsapp_business_account_id: str | None = None
+    whatsapp_access_token: str | None = None
+    whatsapp_verify_token: str | None = None
+    hunter_api_key: str | None = None
 
     @model_validator(mode="after")
     def _required_per_mode(self):

@@ -33,6 +33,7 @@ KEY_CHECKS: dict[str, tuple[str, callable]] = {
     "stripe":      ("stripe_secret_key",    lambda k: k.startswith("sk_")  and len(k) > 30),
     "gmail":       ("gmail_app_password",   lambda k: len(k) >= 12),
     "telegram":    ("telegram_bot_token",   lambda k: ":" in k and len(k) > 20),
+    "whatsapp":    ("whatsapp_access_token", lambda k: len(k) >= 20),
 }
 
 
@@ -168,6 +169,128 @@ def daily_workflow(icp_name_contains: str = "Automation") -> None:
         db.commit()
         log.info("daily_workflow_ready", workflow=str(wf.id), icp=icp.name)
         print(f"daily workflow ready (id={wf.id}) wired to ICP: {icp.name}")
+    finally:
+        db.close()
+
+
+def whatsapp_workflow() -> None:
+    """Create (or refresh) the local-SMB WhatsApp-first daily engine for the demo org.
+    Uses the local discovery path (phone is the primary contact); WhatsApp goes first,
+    email is the 48h fallback if there's no reply."""
+    from app.models.workflow import Workflow
+    from app.services.icp import get_active_icp
+
+    db = SessionLocal()
+    try:
+        org = db.query(Organization).filter(Organization.slug == "demo").first()
+        if not org:
+            print("no demo org - run `seed` first")
+            return
+        icp = get_active_icp(db, org.id)
+        if not icp:
+            print("no ACTIVE ICP - run `python -m app.cli activate-icp \"<name>\"` first")
+            return
+        steps = [
+            {"id": "discover", "type": "discover_local",
+             "config": {"icp_id": str(icp.id)}, "next": ["signals"]},
+            {"id": "signals", "type": "detect_local_signals", "config": {}, "next": ["score"]},
+            {"id": "score", "type": "score_leads",
+             "config": {"icp_id": str(icp.id)}, "next": ["filter"]},
+            {"id": "filter", "type": "filter",
+             "config": {"min_score": 65, "icp_id": str(icp.id)}, "next": ["contacts"]},
+            {"id": "contacts", "type": "find_contacts", "config": {}, "next": ["whatsapp"]},
+            {"id": "whatsapp", "type": "send_whatsapp", "config": {},
+             "next": ["schedule_email"]},
+            {"id": "schedule_email", "type": "schedule_email_followup",
+             "config": {"followup_hours": 48}, "next": ["crm"]},
+            {"id": "crm", "type": "add_to_crm",
+             "config": {"stage": "qualified"}, "next": ["notify"]},
+            {"id": "notify", "type": "notify_telegram", "config": {}, "next": []},
+        ]
+        existing = db.query(Workflow).filter(
+            Workflow.organization_id == org.id,
+            Workflow.name == "Daily local WhatsApp engine",
+        ).first()
+        if existing:
+            existing.steps = steps
+            existing.schedule = "daily"
+            existing.enabled = True
+            existing.settings = {"icp_id": str(icp.id)}
+            wf = existing
+        else:
+            wf = Workflow(
+                organization_id=org.id, project_id=icp.project_id,
+                name="Daily local WhatsApp engine",
+                description="Local SMB discovery -> WhatsApp first, email fallback at 48h.",
+                schedule="daily", enabled=True, steps=steps,
+                settings={"icp_id": str(icp.id)},
+            )
+            db.add(wf)
+        db.commit()
+        log.info("whatsapp_workflow_ready", workflow=str(wf.id), icp=icp.name)
+        print(f"WhatsApp workflow ready (id={wf.id}) wired to ICP: {icp.name}")
+    finally:
+        db.close()
+
+
+def seed_local_demo() -> None:
+    """Insert ONE demo local business (med spa) with REAL-format Google Places review
+    text + rating + phone, then run the REAL local-signal detector on it. The detected
+    signals are genuine (derived by the actual detector from the review text), so the
+    WhatsApp dry-run shows a problem-aware message grounded in real signal data."""
+    from app.models.company import Company
+    from app.services.icp import get_active_icp
+    from app.services.local_signals import detect_local_signals
+
+    db = SessionLocal()
+    try:
+        org = db.query(Organization).filter(Organization.slug == "demo").first()
+        if not org:
+            print("no demo org - run `seed` first")
+            return
+        icp = get_active_icp(db, org.id)
+        name = "Glow Med Spa (demo local)"
+        existing = db.query(Company).filter(
+            Company.organization_id == org.id, Company.name == name).first()
+        places = {
+            "name": name,
+            "website": "https://glowmedspa-demo.example.com",
+            "phone": "214-555-9876",
+            "address": "1880 Oak Lawn Ave, Dallas, TX 75207",
+            "place_id": "demo_glow_med_spa",
+            "type": "medical spa",
+            "rating": 3.7,
+            "review_count": 48,
+            "reviews": [
+                {"text": "Tried calling three times to book and no one answered. "
+                         "Couldn't reach anyone by phone."},
+                {"text": "I left a voicemail and they never answered or called back."},
+                {"text": "Great results but you can never get them on the phone - "
+                         "missed call after missed call."},
+                {"text": "Service was good once I finally got an appointment."},
+            ],
+        }
+        if existing:
+            co = existing
+            co.raw = {**(co.raw or {}), "places": places}
+        else:
+            co = Company(
+                organization_id=org.id, icp_id=icp.id if icp else None,
+                name=name, domain="glowmedspa-demo.example.com",
+                website=places["website"], industry="Medical Spa",
+                description=places["address"], country="USA",
+                pipeline_stage="new", source="seed",
+                classification_status=None, classification_label="buyer",
+                raw={"places": places},
+            )
+            db.add(co)
+        db.commit()
+        db.refresh(co)
+        new_sigs = detect_local_signals(db, co)
+        print(f"seeded demo local business: {co.name} (id={co.id})")
+        print(f"  phone={places['phone']}  rating={places['rating']}  "
+              f"reviews={places['review_count']}")
+        print(f"  real signals detected: {[s.kind for s in new_sigs] or 'already present'}")
     finally:
         db.close()
 
@@ -406,8 +529,88 @@ def outreach_dryrun() -> None:
         print("\n" + "=" * 74)
         print(f"DRY-RUN COMPLETE — would send {would_send}, NOTHING sent, nothing persisted.")
         print("=" * 74 + "\n")
+
+        _whatsapp_dryrun(db, org)
     finally:
         db.close()
+
+
+def _whatsapp_dryrun(db, org) -> None:
+    """WhatsApp leg of the dry-run: for each LOCAL business (a company with a Google
+    Places phone), show the normalized number, real signals, the problem-aware message
+    that WOULD be sent, and the 48h email fallback. Nothing is sent."""
+    from datetime import datetime, timedelta
+
+    from sqlalchemy import select
+
+    from app.ai.outreach_engine import (_extract_city, _rank_signals,
+                                        generate_whatsapp_message)
+    from app.core.config import settings
+    from app.models.company import Company
+    from app.models.signal import Signal
+    from app.services.email_sender import suppression_reason
+    from app.services.settings_resolver import settings_row
+    from app.services.whatsapp_sender import normalize_phone
+
+    if org is None:
+        return
+    pool = db.execute(
+        select(Company).where(
+            Company.organization_id == org.id,
+            Company.raw["places"]["phone"].as_string().is_not(None),
+        ).order_by(Company.name)
+    ).scalars().all()
+
+    s = settings_row(db, org.id)
+    tone = (s.outreach_tone if s else None) or "professional"
+    sender_name = settings.gmail_from_name or "LeadForge"
+    per_run = settings.max_emails_per_run
+    fallback_at = (datetime.utcnow() + timedelta(hours=48)).strftime("%Y-%m-%d %H:%M UTC")
+
+    print("=" * 74)
+    print(f"WHATSAPP DRY-RUN  (NO SEND)  local pool={len(pool)}  per-run cap={per_run}")
+    print("=" * 74)
+    if not pool:
+        print("  (no local businesses with a Places phone in the DB — run "
+              "`python -m app.cli seed-local-demo` to add one)")
+        print("=" * 74 + "\n")
+        return
+    would = 0
+    for co in pool:
+        places = (co.raw or {}).get("places") or {}
+        phone_raw = places.get("phone")
+        normalized = normalize_phone(phone_raw)
+        city = _extract_city({"name": co.name, "description": co.description, "raw": co.raw})
+        print(f"\n[WHATSAPP] {co.name}  {city}")
+        reason = suppression_reason(db, co)
+        if reason:
+            print(f"    SUPPRESSED -> {reason}")
+            continue
+        if not normalized:
+            print(f"    Phone:     INVALID ({phone_raw!r}) -> skip WhatsApp, "
+                  "email fallback scheduled NOW")
+            continue
+        sig_rows = db.execute(select(Signal).where(Signal.company_id == co.id)).scalars().all()
+        ranked = _rank_signals([{"kind": x.kind, "label": x.label, "severity": x.severity}
+                                for x in sig_rows])
+        rating = places.get("rating")
+        sig_str = ", ".join(
+            f"{r['kind']} ({rating} stars)" if r["kind"] == "low_rating" and rating is not None
+            else f"{r['kind']} (sev {r['severity']})" for r in ranked) or "none"
+        gen = generate_whatsapp_message(
+            {"name": co.name, "description": co.description, "raw": co.raw},
+            [{"kind": x.kind, "label": x.label, "severity": x.severity} for x in sig_rows],
+            {"tone": tone, "sender_name": sender_name})
+        would += 1
+        print(f"    Phone:     {normalized} (normalized from {phone_raw})")
+        print(f"    Signals:   {sig_str}")
+        print(f"    Message:   \"{gen['message']}\"  [{gen['source']}]")
+        print(f"    Fallback:  email scheduled for {fallback_at} if no reply")
+        print(f"    Cap:       {per_run - would}/{per_run} remaining")
+        print("    [DRY RUN - nothing sent]")
+    print("\n" + "=" * 74)
+    print(f"WHATSAPP DRY-RUN COMPLETE - would message {would}, NOTHING sent.")
+    print("=" * 74 + "\n")
 
 
 def _rowdict(r):
@@ -528,6 +731,8 @@ def reclassify_cmd() -> None:
 
 
 COMMANDS = {"seed": seed, "keys": keys, "daily-workflow": daily_workflow,
+            "whatsapp-workflow": whatsapp_workflow,
+            "seed-local-demo": seed_local_demo,
             "eval": evaluate, "discovery-eval": discovery_eval,
             "outreach-dryrun": outreach_dryrun, "local-smb": local_smb_setup,
             "activate-icp": activate_icp_cmd, "reclassify": reclassify_cmd}

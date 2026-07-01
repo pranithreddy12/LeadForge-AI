@@ -18,6 +18,11 @@ type Creds = {
   gmail_app_password_set: boolean;
   telegram_bot_token_set: boolean;
   google_places_api_key_set: boolean;
+  whatsapp_phone_number_id: string | null;
+  whatsapp_business_account_id: string | null;
+  whatsapp_access_token_set: boolean;
+  whatsapp_verify_token_set: boolean;
+  hunter_api_key_set: boolean;
 };
 type SettingsData = {
   discovery_mode: "b2b" | "local";
@@ -33,8 +38,16 @@ type SettingsData = {
   target_geography: string[];
   outreach_mode: string[];
   outreach_tone: "professional" | "friendly" | "direct";
+  outreach_send_mode: "manual" | "automated";
   max_emails_per_day: number;
   max_emails_per_run: number;
+  contact_find_hunter: boolean;
+  contact_find_scrape: boolean;
+  contact_find_linkedin: boolean;
+  validate_emails: boolean;
+  filter_min_score: number;
+  filter_enforce_icp_size: boolean;
+  whatsapp_webhook_url: string;
   credentials: Creds;
 };
 
@@ -81,6 +94,26 @@ function Field({ label, children, hint }: { label: string; children: React.React
   );
 }
 
+function Toggle({ label, hint, value, onChange }: {
+  label: string; hint?: string; value: boolean; onChange: (v: boolean) => void;
+}) {
+  return (
+    <div className="flex items-center justify-between gap-3 py-1.5">
+      <div>
+        <div className="text-sm font-medium">{label}</div>
+        {hint && <p className="text-xs text-muted-foreground">{hint}</p>}
+      </div>
+      <button
+        type="button"
+        onClick={() => onChange(!value)}
+        className={`relative h-6 w-11 shrink-0 rounded-full transition-colors ${value ? "bg-green-500" : "bg-white/15"}`}
+      >
+        <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white transition-all ${value ? "left-[22px]" : "left-0.5"}`} />
+      </button>
+    </div>
+  );
+}
+
 function CredDot({ set }: { set: boolean }) {
   return (
     <span className="inline-flex items-center gap-1.5 text-xs whitespace-nowrap">
@@ -94,8 +127,11 @@ const EMPTY: SettingsData = {
   discovery_mode: "b2b", target_business_types: [], target_locations: [],
   search_radius_miles: 25, min_reviews: 10, max_results_per_run: 20,
   icp_name: "", employee_min: null, employee_max: null, target_industries: [], target_geography: [],
-  outreach_mode: ["email"], outreach_tone: "professional", max_emails_per_day: 50, max_emails_per_run: 25,
-  credentials: { gmail_address: "", telegram_chat_id: "", gmail_app_password_set: false, telegram_bot_token_set: false, google_places_api_key_set: false },
+  outreach_mode: ["email"], outreach_tone: "professional", outreach_send_mode: "manual", max_emails_per_day: 50, max_emails_per_run: 25,
+  contact_find_hunter: true, contact_find_scrape: true, contact_find_linkedin: true, validate_emails: true,
+  filter_min_score: 65, filter_enforce_icp_size: true,
+  whatsapp_webhook_url: "",
+  credentials: { gmail_address: "", telegram_chat_id: "", gmail_app_password_set: false, telegram_bot_token_set: false, google_places_api_key_set: false, whatsapp_phone_number_id: "", whatsapp_business_account_id: "", whatsapp_access_token_set: false, whatsapp_verify_token_set: false, hunter_api_key_set: false },
 };
 
 export default function SettingsPage() {
@@ -105,7 +141,7 @@ export default function SettingsPage() {
   });
   const [f, setF] = useState<SettingsData>(EMPTY);
   const [err, setErr] = useState<string | null>(null);
-  const [secrets, setSecrets] = useState({ gmail_app_password: "", telegram_bot_token: "", google_places_api_key: "" });
+  const [secrets, setSecrets] = useState({ gmail_app_password: "", telegram_bot_token: "", google_places_api_key: "", whatsapp_access_token: "", whatsapp_verify_token: "", hunter_api_key: "" });
 
   useEffect(() => { if (data) setF(data); }, [data]);
 
@@ -114,7 +150,7 @@ export default function SettingsPage() {
     onSuccess: () => {
       toast.success("Settings saved");
       qc.invalidateQueries({ queryKey: ["settings"] });
-      setSecrets({ gmail_app_password: "", telegram_bot_token: "", google_places_api_key: "" });
+      setSecrets({ gmail_app_password: "", telegram_bot_token: "", google_places_api_key: "", whatsapp_access_token: "", whatsapp_verify_token: "", hunter_api_key: "" });
     },
     onError: (e: any) => toast.error(e?.message || "Save failed"),
   });
@@ -139,12 +175,21 @@ export default function SettingsPage() {
       icp_name: f.icp_name, employee_min: f.employee_min, employee_max: f.employee_max,
       target_industries: f.target_industries, target_geography: f.target_geography,
       outreach_mode: f.outreach_mode, outreach_tone: f.outreach_tone,
+      outreach_send_mode: f.outreach_send_mode,
       max_emails_per_day: f.max_emails_per_day, max_emails_per_run: f.max_emails_per_run,
+      contact_find_hunter: f.contact_find_hunter, contact_find_scrape: f.contact_find_scrape,
+      contact_find_linkedin: f.contact_find_linkedin, validate_emails: f.validate_emails,
+      filter_min_score: f.filter_min_score, filter_enforce_icp_size: f.filter_enforce_icp_size,
       gmail_address: f.credentials.gmail_address ?? "", telegram_chat_id: f.credentials.telegram_chat_id ?? "",
+      whatsapp_phone_number_id: f.credentials.whatsapp_phone_number_id ?? "",
+      whatsapp_business_account_id: f.credentials.whatsapp_business_account_id ?? "",
     };
     if (secrets.gmail_app_password) body.gmail_app_password = secrets.gmail_app_password;
     if (secrets.telegram_bot_token) body.telegram_bot_token = secrets.telegram_bot_token;
     if (secrets.google_places_api_key) body.google_places_api_key = secrets.google_places_api_key;
+    if (secrets.whatsapp_access_token) body.whatsapp_access_token = secrets.whatsapp_access_token;
+    if (secrets.whatsapp_verify_token) body.whatsapp_verify_token = secrets.whatsapp_verify_token;
+    if (secrets.hunter_api_key) body.hunter_api_key = secrets.hunter_api_key;
     save.mutate(body);
   }
 
@@ -217,12 +262,54 @@ export default function SettingsPage() {
               )}
             </CardContent>
           </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Contact finding</CardTitle>
+              <CardDescription>How the pipeline finds a contact email for each lead. Turn sources on/off.</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-1 divide-y divide-white/5">
+              <Toggle label="Hunter.io domain search" hint="Highest-confidence emails (needs a Hunter API key)."
+                      value={f.contact_find_hunter} onChange={(v) => set({ contact_find_hunter: v })} />
+              <Toggle label="Website email scraping" hint="Fallback: scrape role inboxes (sales@/info@) from the site."
+                      value={f.contact_find_scrape} onChange={(v) => set({ contact_find_scrape: v })} />
+              <Toggle label="LinkedIn / SERP names" hint="Find decision-maker names + titles via search."
+                      value={f.contact_find_linkedin} onChange={(v) => set({ contact_find_linkedin: v })} />
+              <Toggle label="Validate emails" hint="Verify deliverability (Hunter/NeverBounce) before outreach."
+                      value={f.validate_emails} onChange={(v) => set({ validate_emails: v })} />
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Lead quality filter</CardTitle>
+              <CardDescription>The bar a lead must clear to reach outreach. Quality over volume.</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <Field label="Minimum score" hint="0-100. Leads scoring below this are dropped before outreach.">
+                {numIn(f.filter_min_score, (n) => set({ filter_min_score: n }))}
+              </Field>
+              <Toggle label="Enforce ICP size band" hint="Hard-drop companies outside your employee_min/max, regardless of score."
+                      value={f.filter_enforce_icp_size} onChange={(v) => set({ filter_enforce_icp_size: v })} />
+            </CardContent>
+          </Card>
         </TabsContent>
 
         <TabsContent value="outreach" className="space-y-4">
           <Card>
             <CardHeader><CardTitle>Outreach</CardTitle></CardHeader>
             <CardContent className="space-y-4">
+              <Field label="Send mode" hint="Manual = the daily engine drafts only; you review + send each on the Today page. Automated = the engine sends automatically.">
+                <div className="flex gap-2">
+                  {([["manual", "Manual review"], ["automated", "Automated send"]] as const).map(([v, label]) => (
+                    <Button key={v} variant={f.outreach_send_mode === v ? "default" : "outline"} onClick={() => set({ outreach_send_mode: v })}>{label}</Button>
+                  ))}
+                </div>
+                {f.outreach_send_mode === "automated" && (
+                  <p className="mt-2 text-xs text-amber-500">Automated mode sends real emails/WhatsApp without review. Keep Manual until you trust the drafts.</p>
+                )}
+              </Field>
+              <Separator />
               <Field label="Tone">
                 <div className="flex gap-2">
                   {(["professional", "friendly", "direct"] as const).map((t) => (
@@ -269,6 +356,50 @@ export default function SettingsPage() {
                   <Input type="password" value={secrets.google_places_api_key} onChange={(e) => setSecrets({ ...secrets, google_places_api_key: e.target.value })} placeholder="leave blank to keep current" />
                   <CredDot set={f.credentials.google_places_api_key_set} />
                 </div>
+              </Field>
+              <Separator />
+              <Field label="Hunter.io API key" hint="finds decision-maker emails by domain (secondary contact for local; primary email-finder for B2B)">
+                <div className="flex items-center gap-3">
+                  <Input type="password" value={secrets.hunter_api_key} onChange={(e) => setSecrets({ ...secrets, hunter_api_key: e.target.value })} placeholder="leave blank to keep current" />
+                  <CredDot set={f.credentials.hunter_api_key_set} />
+                </div>
+              </Field>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>WhatsApp (Meta Cloud API)</CardTitle>
+              <CardDescription>First-touch outreach channel for local businesses. Email is the 48h fallback if there is no reply.</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <Field label="Phone number ID" hint="Meta -> WhatsApp -> API Setup (the ID, not the number)">
+                <div className="flex items-center gap-3">
+                  <Input value={f.credentials.whatsapp_phone_number_id ?? ""} onChange={(e) => set({ credentials: { ...f.credentials, whatsapp_phone_number_id: e.target.value } })} placeholder="123456789012345" />
+                  <CredDot set={!!f.credentials.whatsapp_phone_number_id} />
+                </div>
+              </Field>
+              <Field label="Business account ID (WABA)">
+                <div className="flex items-center gap-3">
+                  <Input value={f.credentials.whatsapp_business_account_id ?? ""} onChange={(e) => set({ credentials: { ...f.credentials, whatsapp_business_account_id: e.target.value } })} placeholder="123456789012345" />
+                  <CredDot set={!!f.credentials.whatsapp_business_account_id} />
+                </div>
+              </Field>
+              <Field label="Access token" hint="permanent System User token">
+                <div className="flex items-center gap-3">
+                  <Input type="password" value={secrets.whatsapp_access_token} onChange={(e) => setSecrets({ ...secrets, whatsapp_access_token: e.target.value })} placeholder="leave blank to keep current" />
+                  <CredDot set={f.credentials.whatsapp_access_token_set} />
+                </div>
+              </Field>
+              <Field label="Verify token" hint="any string you choose; paste the same value into the Meta webhook console">
+                <div className="flex items-center gap-3">
+                  <Input type="password" value={secrets.whatsapp_verify_token} onChange={(e) => setSecrets({ ...secrets, whatsapp_verify_token: e.target.value })} placeholder="leave blank to keep current" />
+                  <CredDot set={f.credentials.whatsapp_verify_token_set} />
+                </div>
+              </Field>
+              <Separator />
+              <Field label="Webhook URL (read-only)" hint="Paste this into Meta -> WhatsApp -> Configuration -> Webhook -> Callback URL">
+                <Input readOnly value={f.whatsapp_webhook_url} onFocus={(e) => e.currentTarget.select()} className="font-mono text-xs" />
               </Field>
             </CardContent>
           </Card>

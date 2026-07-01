@@ -3,7 +3,7 @@ from __future__ import annotations
 import uuid
 
 from celery import shared_task
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from app.ai.outreach_engine import generate_outreach
 from app.core.logging import get_logger
@@ -12,6 +12,7 @@ from app.models.company import Company
 from app.models.contact import Contact
 from app.models.icp import ICP
 from app.models.signal import Signal
+from app.models.whatsapp import WhatsAppMessage
 from app.workers._base import task_session
 
 log = get_logger("workers.outreach")
@@ -79,3 +80,49 @@ def draft_outreach_for_company(organization_id: str, company_id: str,
         )
         db.add(msg)
         return {"created": 1, "subject": msg.subject}
+
+
+@shared_task(name="app.workers.outreach.send_scheduled_emails")
+def send_scheduled_emails() -> dict:
+    """Hourly: send EmailMessages whose scheduled_at has passed. For a WhatsApp-first
+    sequence, if the same company has already REPLIED on WhatsApp, cancel the scheduled
+    email instead of sending (set status='cancelled'). Otherwise send via the existing
+    Gmail sender, bypassing only the whatsapp_active guard (this IS the deliberate
+    fallback, not a parallel send)."""
+    from app.services.email_sender import send_email_message
+    from app.services.settings_resolver import outreach_send_mode
+
+    with task_session() as db:
+        due = db.execute(
+            select(EmailMessage).where(
+                EmailMessage.status == "scheduled",
+                EmailMessage.channel == "email",
+                EmailMessage.scheduled_at.is_not(None),
+                EmailMessage.scheduled_at <= func.now(),
+            )
+        ).scalars().all()
+        sent = cancelled = skipped_manual = 0
+        for m in due:
+            # Manual mode never auto-sends — leave the scheduled draft for /today.
+            if outreach_send_mode(db, m.organization_id) == "manual":
+                skipped_manual += 1
+                continue
+            if m.company_id is not None:
+                replied = db.execute(
+                    select(func.count(WhatsAppMessage.id)).where(
+                        WhatsAppMessage.company_id == m.company_id,
+                        WhatsAppMessage.status == "replied",
+                    )
+                ).scalar_one()
+                if replied:
+                    m.status = "cancelled"
+                    m.meta = {**(m.meta or {}), "cancelled_reason": "whatsapp_replied"}
+                    cancelled += 1
+                    continue
+            if send_email_message(db, m, skip_whatsapp_guard=True).get("sent"):
+                sent += 1
+        db.commit()
+        log.info("send_scheduled_emails", due=len(due), sent=sent, cancelled=cancelled,
+                 skipped_manual=skipped_manual)
+        return {"due": len(due), "sent": sent, "cancelled": cancelled,
+                "skipped_manual": skipped_manual}

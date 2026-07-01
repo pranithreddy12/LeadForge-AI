@@ -158,19 +158,43 @@ def _record_reply(db, message: EmailMessage, msg) -> int:
 
     if company and company.pipeline_stage in ("new", "qualified", "contacted"):
         company.pipeline_stage = "replied"
+
+    # Enrich the reply alert with the same context as the WhatsApp path: grade/score,
+    # the driving signal, an AI-suggested next reply, and contact handles.
+    from app.ai.outreach_engine import generate_suggested_reply
+    from app.services.whatsapp_inbound import (_city_of, _driving_signal,
+                                               _latest_score)
+    city = grade = signal = suggested = None
+    score = None
+    email_addr = (contact.email if contact else None) or (message.meta or {}).get("to")
+    phone = None
+    if company is not None:
+        city = _city_of(company)
+        signal = _driving_signal(db, company.id)
+        sc = _latest_score(db, company.id)
+        if sc:
+            score, grade = int(sc[0]) if sc[0] is not None else None, sc[1]
+        phone = ((company.raw or {}).get("places") or {}).get("phone")
+        res = generate_suggested_reply(company={"name": company.name},
+                                       their_message=snippet, signal=signal,
+                                       channel="email")
+        suggested = res.get("suggested_response") if not res.get("_provider_error") else None
+
     db.add(CRMActivity(
         organization_id=message.organization_id,
         company_id=message.company_id,
         contact_id=message.contact_id,
         kind="email",
         body=f"Reply received: {snippet[:280]}",
-        payload={"direction": "inbound", "subject": subject},
+        payload={"direction": "inbound", "channel": "email", "subject": subject,
+                 "reply": snippet[:1000], "suggested_response": suggested},
     ))
     db.commit()
 
-    telegram.notify_reply(
-        contact_name=contact_name, company_name=company_name,
-        subject=subject, snippet=snippet,
+    telegram.notify_reply_rich(
+        channel="Email", company_name=company_name, city=city, grade=grade,
+        score=score, signal=signal, reply_text=snippet,
+        suggested_response=suggested, phone=phone, email=email_addr,
         company_id=str(message.company_id) if message.company_id else None,
     )
     log.info("reply_recorded", company=company_name, contact=contact_name)

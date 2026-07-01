@@ -22,6 +22,27 @@ from app.workers.enrichment import enrich_batch_task
 router = APIRouter(prefix="/companies", tags=["companies"])
 
 
+def _attach_latest_scores(db: Session, org_id: uuid.UUID, rows: list[Company]) -> None:
+    """Attach the LATEST LeadScore (score + grade) per company onto each ORM row so
+    CompanyOut can surface it. Without this the leads list shows score=None even for
+    scored companies (the list never joined LeadScore)."""
+    from app.models.scoring import LeadScore
+    from app.services.scoring import latest_score_ids_select
+    ids = [r.id for r in rows]
+    if not ids:
+        return
+    latest = latest_score_ids_select(org_id).subquery()
+    pairs = db.execute(
+        select(LeadScore.company_id, LeadScore.score, LeadScore.grade)
+        .where(LeadScore.id.in_(select(latest.c.id)), LeadScore.company_id.in_(ids))
+    ).all()
+    by_company = {cid: (sc, gr) for cid, sc, gr in pairs}
+    for r in rows:
+        sc = by_company.get(r.id)
+        r.score = sc[0] if sc else None
+        r.grade = sc[1] if sc else None
+
+
 @router.get("", response_model=Page[CompanyOut])
 def list_companies(
     db: Session = Depends(get_db),
@@ -55,6 +76,7 @@ def list_companies(
     col = getattr(Company, column, Company.created_at)
     stmt = stmt.order_by(desc(col) if sort.startswith("-") else col)
     rows = db.execute(stmt.offset((page - 1) * page_size).limit(page_size)).scalars().all()
+    _attach_latest_scores(db, org.id, rows)
 
     return Page(items=rows, page=page, page_size=page_size, total=total,
                 has_next=total > page * page_size)
@@ -77,6 +99,7 @@ def get_company(company_id: uuid.UUID, db: Session = Depends(get_db),
     c = db.get(Company, company_id)
     if not c or c.organization_id != org.id:
         raise NotFound("Company")
+    _attach_latest_scores(db, org.id, [c])
     return c
 
 

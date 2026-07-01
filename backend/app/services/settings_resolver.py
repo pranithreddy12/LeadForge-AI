@@ -25,6 +25,11 @@ _CRED_MAP = {
     "telegram_bot_token":    ("telegram_bot_token_enc",    True,  "telegram_bot_token"),
     "telegram_chat_id":      ("telegram_chat_id",          False, "telegram_chat_id"),
     "google_places_api_key": ("google_places_api_key_enc", True,  "google_maps_api_key"),
+    "whatsapp_phone_number_id":     ("whatsapp_phone_number_id",     False, "whatsapp_phone_number_id"),
+    "whatsapp_business_account_id": ("whatsapp_business_account_id", False, "whatsapp_business_account_id"),
+    "whatsapp_access_token":        ("whatsapp_access_token_enc",    True,  "whatsapp_access_token"),
+    "whatsapp_verify_token":        ("whatsapp_verify_token_enc",    True,  "whatsapp_verify_token"),
+    "hunter_api_key":               ("hunter_api_key_enc",           True,  "hunter_api_key"),
 }
 
 
@@ -48,6 +53,33 @@ def resolve_credential(db: Session, organization_id: uuid.UUID, name: str) -> st
         log.info("using_global_env_credential", credential=name,
                  hint="set it in Settings to override the global .env value")
     return env_val
+
+
+def outreach_send_mode(db: Session, organization_id: uuid.UUID) -> str:
+    """'manual' (draft only, send yourself on /today) or 'automated' (workflow sends).
+    Safe default: 'manual' — nothing auto-sends unless explicitly switched on."""
+    s = settings_row(db, organization_id)
+    return (s.outreach_send_mode if s and s.outreach_send_mode else "manual")
+
+
+def pipeline_config(db: Session, organization_id: uuid.UUID) -> dict:
+    """All the Settings-driven pipeline toggles in one dict (safe defaults if no row).
+    Keeps the workflow steps config-driven instead of hardcoded."""
+    s = settings_row(db, organization_id)
+    if s is None:
+        return {"contact_find_hunter": True, "contact_find_scrape": True,
+                "contact_find_linkedin": True, "validate_emails": True,
+                "filter_min_score": 65, "filter_enforce_icp_size": True,
+                "discovery_mode": "b2b"}
+    return {
+        "contact_find_hunter": bool(s.contact_find_hunter),
+        "contact_find_scrape": bool(s.contact_find_scrape),
+        "contact_find_linkedin": bool(s.contact_find_linkedin),
+        "validate_emails": bool(s.validate_emails),
+        "filter_min_score": int(s.filter_min_score if s.filter_min_score is not None else 65),
+        "filter_enforce_icp_size": bool(s.filter_enforce_icp_size),
+        "discovery_mode": s.discovery_mode or "b2b",
+    }
 
 
 def resolve_caps(db: Session, organization_id: uuid.UUID) -> tuple[int, int]:

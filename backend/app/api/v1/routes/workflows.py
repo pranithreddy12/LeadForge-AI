@@ -96,3 +96,23 @@ def list_runs(workflow_id: uuid.UUID, db: Session = Depends(get_db),
         select(WorkflowRun).where(WorkflowRun.workflow_id == workflow_id)
         .order_by(WorkflowRun.created_at.desc()).limit(limit)
     ).scalars().all()
+
+
+@router.get("/{workflow_id}/runs/{run_id}/leads")
+def run_leads(workflow_id: uuid.UUID, run_id: uuid.UUID,
+              db: Session = Depends(get_db),
+              org: Organization = Depends(current_org)):
+    """Full lead-level detail for ONE run (the Runs dashboard expand view)."""
+    run = db.get(WorkflowRun, run_id)
+    if (not run or run.workflow_id != workflow_id
+            or run.organization_id != org.id):
+        raise NotFound("WorkflowRun")
+    return {
+        "run_id": str(run.id),
+        "status": run.status,
+        "started_at": run.started_at,
+        "finished_at": run.finished_at,
+        "items_in": run.items_in,
+        "items_out": run.items_out,
+        "leads": run.run_leads or [],
+    }

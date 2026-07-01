@@ -54,6 +54,9 @@ class WorkflowRun(Base, UUIDPk, Timestamps):
     finished_at: Mapped[str | None] = mapped_column(DateTime(timezone=True))
     error: Mapped[str | None] = mapped_column(Text)
     step_results: Mapped[list[dict]] = mapped_column(JSONB, default=list)
+    # Per-lead detail for this run (one object per company the run touched) — powers the
+    # Runs dashboard funnel + lead-level audit. See workflows.build_run_leads().
+    run_leads: Mapped[list[dict]] = mapped_column(JSONB, default=list)
     items_in: Mapped[int] = mapped_column(Integer, default=0)
     items_out: Mapped[int] = mapped_column(Integer, default=0)
 

@@ -49,22 +49,41 @@ def stamp_message_id() -> str:
 
 
 def suppression_reason(db: Session, company: Company,
-                       contact: Contact | None = None) -> str | None:
+                       contact: Contact | None = None,
+                       *, check_whatsapp: bool = True) -> str | None:
     """Return a concrete reason string if outreach to this company must be SUPPRESSED
     (not drafted, not sent), else None.
 
-    Checks ALL THREE conditions INDEPENDENTLY and reports every one that matches (no
+    Checks ALL conditions INDEPENDENTLY and reports every one that matches (no
     short-circuit) so the dry-run shows exactly why a company was skipped:
       (a) a sent/replied/bounced EmailMessage already exists for the company;
       (b) the CRM pipeline_stage is contacted/replied/or beyond — even with NO
           EmailMessage row (covers manual stage advances / out-of-band sends);
-      (c) classification_status == 'held_unknown' — the gate has not confirmed buyer.
+      (c) classification_status == 'held_unknown' — the gate has not confirmed buyer;
+      (d) whatsapp_active: a WhatsAppMessage (sent/delivered/read/replied) exists — a
+          WhatsApp-first sequence is in progress, so do NOT start a PARALLEL email.
+          The deliberate 48h email fallback (schedule_email_followup / the scheduled
+          sender) passes check_whatsapp=False to bypass THIS guard only — it IS the
+          sequence's next step, not a parallel send.
     """
     reasons: list[str] = []
 
     # (c) held / unconfirmed by the qualification gate.
     if company.classification_status == "held_unknown":
         reasons.append("held_unknown: qualification gate has not confirmed this is a buyer")
+
+    # (d) WhatsApp sequence already in progress for this company.
+    if check_whatsapp:
+        from app.models.whatsapp import WhatsAppMessage
+        n_wa = db.execute(
+            select(func.count(WhatsAppMessage.id)).where(
+                WhatsAppMessage.company_id == company.id,
+                WhatsAppMessage.status.in_(("sent", "delivered", "read", "replied")),
+            )
+        ).scalar_one()
+        if n_wa:
+            reasons.append(f"whatsapp_active: {n_wa} WhatsApp message(s) in progress "
+                           "(sequence owns this company)")
 
     # (a) an already-attempted EmailMessage exists.
     q = select(func.count(EmailMessage.id)).where(
@@ -120,10 +139,13 @@ def daily_cap_remaining(db: Session, organization_id) -> int:
     return max(0, per_day - sent_today_count(db, organization_id))
 
 
-def send_email_message(db: Session, message: EmailMessage) -> dict:
+def send_email_message(db: Session, message: EmailMessage,
+                       *, skip_whatsapp_guard: bool = False) -> dict:
     """Send one drafted EmailMessage via Gmail. Marks it sent + stores Message-ID.
 
     Gmail creds resolve from the org's Settings, falling back to .env (logged).
+    `skip_whatsapp_guard` is set by the scheduled email-fallback sender, whose own
+    replied-check already decides whether the WhatsApp-sequence email should go out.
     Returns a status dict; never raises (failures are recorded on the row)."""
     from app.services.settings_resolver import resolve_credential
     from_addr = resolve_credential(db, message.organization_id, "gmail_address")
@@ -139,7 +161,7 @@ def send_email_message(db: Session, message: EmailMessage) -> dict:
     # before the company advanced). Belt-and-suspenders with the draft-time check.
     company = db.get(Company, message.company_id) if message.company_id else None
     if company is not None:
-        reason = suppression_reason(db, company)
+        reason = suppression_reason(db, company, check_whatsapp=not skip_whatsapp_guard)
         if reason:
             return {"sent": False, "reason": f"suppressed: {reason}"}
 

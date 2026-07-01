@@ -42,3 +42,7 @@ logs/
 # misc
 tmp/
 .cache/
+
+# dev artifacts
+.playwright-mcp/
+*.png

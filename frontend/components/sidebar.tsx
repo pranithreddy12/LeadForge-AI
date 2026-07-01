@@ -5,19 +5,24 @@ import { usePathname } from "next/navigation";
 import {
   LayoutDashboard, Sparkles, Building2, Users, Activity, Target,
   Workflow as WorkflowIcon, MessageSquare, Settings, Send, CreditCard, Crosshair,
+  ListChecks, Inbox, Sun, ClipboardList,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const nav = [
+  { href: "/today",         label: "Today",         icon: Sun },
   { href: "/dashboard",     label: "Dashboard",     icon: LayoutDashboard },
   { href: "/icp",           label: "AI ICP",        icon: Sparkles },
   { href: "/opportunities", label: "Opportunities", icon: Crosshair },
   { href: "/leads",         label: "Leads",         icon: Building2 },
   { href: "/contacts",      label: "Contacts",      icon: Users },
   { href: "/signals",       label: "Signals",       icon: Activity },
+  { href: "/replies",       label: "Replies",       icon: Inbox },
+  { href: "/log",           label: "Outreach Log",  icon: ClipboardList },
   { href: "/crm",           label: "CRM",           icon: Target },
   { href: "/campaigns",     label: "Campaigns",     icon: Send },
   { href: "/workflows",     label: "Workflows",     icon: WorkflowIcon },
+  { href: "/runs",          label: "Runs",          icon: ListChecks },
   { href: "/chat",          label: "Ask AI",        icon: MessageSquare },
 ];
 

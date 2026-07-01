@@ -7,7 +7,8 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 PipelineStageT = Literal[
-    "new", "qualified", "contacted", "replied", "meeting", "proposal", "won", "lost"
+    "new", "qualified", "contacted", "replied", "meeting", "proposal", "won", "lost",
+    "in_conversation", "closed_won", "closed_lost",
 ]
 
 

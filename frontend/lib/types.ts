@@ -69,8 +69,78 @@ export interface Company {
   icp_id?: ID | null;
   funding_total_usd?: number | null;
   last_funding_stage?: string | null;
+  score?: number | null;
+  grade?: "A+" | "A" | "B" | "C" | "D" | "F" | null;
   created_at: string;
   updated_at: string;
+}
+
+export interface RunLead {
+  company_id: ID;
+  company_name: string;
+  city?: string | null;
+  score?: number | null;
+  grade?: string | null;
+  signals: string[];
+  qualification_label?: string | null;
+  filter_passed: boolean;
+  outreach_channel?: string | null;
+  outreach_status?: string | null;
+  suppression_reason?: string | null;
+}
+
+export interface TodayLead {
+  draft_id: ID;
+  company_id: ID;
+  company_name: string;
+  domain?: string | null;
+  score?: number | null;
+  grade?: string | null;
+  signal?: string | null;
+  subject: string;
+  body: string;
+  to?: string | null;
+  phone?: string | null;
+}
+
+export interface ManualLogItem {
+  id: ID;
+  company_name: string;
+  channel: string;
+  action: string;
+  skip_reason?: string | null;
+  sent_by_me: boolean;
+  replied: boolean;
+  notes?: string | null;
+  at?: string | null;
+}
+
+export interface ReplyLead {
+  company_id: ID;
+  company_name: string;
+  city?: string | null;
+  score?: number | null;
+  grade?: string | null;
+  stage: string;
+  channel: string;
+  original_message?: string | null;
+  reply_text?: string | null;
+  reply_at?: string | null;
+  suggested_response?: string | null;
+}
+
+export interface WorkflowRun {
+  id: ID;
+  workflow_id: ID;
+  status: string;
+  started_at?: string | null;
+  finished_at?: string | null;
+  error?: string | null;
+  items_in: number;
+  items_out: number;
+  step_results: Array<{ id: string; type: string; result: Record<string, unknown> }>;
+  run_leads: RunLead[];
+  created_at: string;
 }
 
 export interface Contact {

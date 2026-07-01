@@ -20,6 +20,10 @@ class PipelineStage(str, enum.Enum):
     proposal = "proposal"
     won = "won"
     lost = "lost"
+    # Reply-funnel stages (Reply Intelligence / the Replies dashboard).
+    in_conversation = "in_conversation"
+    closed_won = "closed_won"
+    closed_lost = "closed_lost"
 
 
 # Pipeline state lives on the Company via a denormalized column for fast filtering.

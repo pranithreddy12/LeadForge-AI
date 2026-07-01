@@ -111,6 +111,7 @@ export default function LeadsPage() {
               <thead>
                 <tr className="text-left text-xs text-muted-foreground border-b border-white/5">
                   <th className="py-2 px-4">Company</th>
+                  <th className="py-2 px-4">Score</th>
                   <th className="py-2 px-4">Industry</th>
                   <th className="py-2 px-4">Employees</th>
                   <th className="py-2 px-4">Country</th>
@@ -132,6 +133,14 @@ export default function LeadsPage() {
                         </div>
                       </Link>
                     </td>
+                    <td className="py-2.5 px-4">
+                      {c.score != null
+                        ? <span className="inline-flex items-center gap-1.5">
+                            <span className="font-semibold tabular-nums">{c.score}</span>
+                            {c.grade && <Badge variant="brand">{c.grade}</Badge>}
+                          </span>
+                        : <span className="text-muted-foreground">—</span>}
+                    </td>
                     <td className="py-2.5 px-4 text-muted-foreground">{c.industry || "—"}</td>
                     <td className="py-2.5 px-4 text-muted-foreground">{c.employee_count ?? "—"}</td>
                     <td className="py-2.5 px-4 text-muted-foreground">{c.country || "—"}</td>
@@ -140,7 +149,7 @@ export default function LeadsPage() {
                   </tr>
                 ))}
                 {companies.data?.items.length === 0 && (
-                  <tr><td colSpan={6} className="py-10 text-center text-sm text-muted-foreground">
+                  <tr><td colSpan={7} className="py-10 text-center text-sm text-muted-foreground">
                     No companies yet. Choose an ICP and click <em>Discover</em>.
                   </td></tr>
                 )}

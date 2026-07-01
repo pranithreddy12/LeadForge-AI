@@ -88,6 +88,9 @@ class CompanyOut(BaseModel):
     icp_id: uuid.UUID | None
     funding_total_usd: int | None = None
     last_funding_stage: str | None = None
+    # latest LeadScore for this company (joined in list/detail; None if never scored)
+    score: int | None = None
+    grade: str | None = None
     created_at: datetime
     updated_at: datetime
 

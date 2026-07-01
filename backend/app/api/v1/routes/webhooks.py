@@ -1,5 +1,6 @@
 import stripe
 from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi.responses import JSONResponse, PlainTextResponse
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
@@ -50,3 +51,38 @@ async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
     log.info("stripe_event", event_type=event["type"])
     apply_stripe_event(db, event)
     return {"received": True}
+
+
+# ---- WhatsApp (Meta Cloud API) ----------------------------------------------
+
+@router.get("/whatsapp")
+async def whatsapp_verify(request: Request, db: Session = Depends(get_db)):
+    """Meta webhook verification handshake. Echo hub.challenge (as an integer) when the
+    hub.verify_token matches; 403 otherwise."""
+    qp = request.query_params
+    mode = qp.get("hub.mode")
+    token = qp.get("hub.verify_token")
+    challenge = qp.get("hub.challenge")
+    from app.services.whatsapp_inbound import valid_verify_token
+    if mode == "subscribe" and valid_verify_token(db, token):
+        log.info("whatsapp_webhook_verified")
+        try:
+            return PlainTextResponse(content=str(int(challenge)))
+        except (TypeError, ValueError):
+            return PlainTextResponse(content=challenge or "")
+    log.warning("whatsapp_webhook_verify_failed", mode=mode)
+    raise HTTPException(status_code=403, detail="verification failed")
+
+
+@router.post("/whatsapp")
+async def whatsapp_inbound(request: Request, db: Session = Depends(get_db)):
+    """Inbound WhatsApp messages + status receipts. ALWAYS returns 200 so Meta does not
+    retry; processing errors are swallowed and logged."""
+    try:
+        payload = await request.json()
+    except Exception:
+        return JSONResponse({"ok": True})
+    from app.services.whatsapp_inbound import process_inbound
+    result = process_inbound(db, payload)
+    log.info("whatsapp_webhook_processed", **result)
+    return JSONResponse({"ok": True, **result})
