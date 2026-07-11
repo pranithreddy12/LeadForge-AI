@@ -10,6 +10,18 @@ from app.core.logging import get_logger
 log = get_logger(__name__)
 
 
+def cta_instruction(booking_link: str | None) -> str:
+    """The CTA rule for a draft. With a booking link, invite them to book using it;
+    WITHOUT one, invite a reply only — never fabricate a 'book a slot' with no link."""
+    link = (booking_link or "").strip()
+    if link:
+        return (f"End with a friendly call to action inviting them to book a quick call "
+                f"using this exact link (include it verbatim): {link}")
+    return ("End with a call to action inviting them to simply reply to this email. "
+            "Do NOT include any booking link and do NOT ask them to 'book a slot', "
+            "'grab a time', or 'schedule' — there is no booking link configured.")
+
+
 def humanize(text: str | None) -> str:
     """Strip the tell-tale AI punctuation (em/en dashes) from generated copy and replace
     it with normal human punctuation. LLMs ignore 'no em dashes' instructions ~half the
@@ -29,26 +41,158 @@ def humanize(text: str | None) -> str:
     t = re.sub(r"[ \t]{2,}", " ", t)
     return t.strip()
 
-# Local-business outreach (Step 7). Every claim MUST come from the provided Places data
-# — nothing invented. Tone matches the Settings value.
+# Local-business outreach. Signal-led, human, deliverability-safe. Every claim from
+# real data; nothing invented. Produces email {subject, body} + a short DM variant.
 LOCAL_OUTREACH_SYSTEM = """\
-You write short cold outreach to LOCAL service businesses (med spas, dental clinics,
-law firms, home services, salons) for an AI automation agency that helps them never
-miss a call or lead and respond to inquiries instantly (AI voice agents, speed-to-lead,
-24/7 online booking).
+You write short, human, cold outreach for an agency that helps local service businesses
+(med spas, clinics, dental, salons, home services) capture every call, message, and
+after-hours enquiry with an AI receptionist + WhatsApp/SMS follow-up. The goal of the
+email is ONE thing: get a reply. Not to explain everything.
+
+You receive: business_name, contact_name (may be empty), qualifying_signal (the specific
+real reason this lead was picked), city.
 
 HARD RULES:
-- Use ONLY the real facts provided about THIS business: its name, city/location, Google
-  rating and review count, and any review-based signal (e.g. reviews mentioning missed
-  calls, slow response, no online booking). INVENT NOTHING — no fake numbers, no fake
-  details. If a fact is not provided, do not state it.
-- Lead with the most specific real signal and tie it to ONE concrete outcome ("never
-  miss a call again", "respond to every lead in under 30 seconds", "let patients book
-  24/7"). Use their rating/review count as a light social-proof anchor if provided.
-- Honor the requested TONE exactly: professional = polished and formal; friendly =
-  warm and conversational; direct = one short paragraph, one clear ask.
-- 3-5 sentences. End with a soft, low-friction ask (a quick reply or a 10-minute call).
+1. LEAD WITH THEIR SIGNAL. The first sentence must reference the qualifying_signal or
+   business_name specifically. Never open with a generic stat.
+2. NEVER use these spam/overused phrases: "never miss a call", "never miss another",
+   "never miss a lead", "instant lead response", "24/7 booking", "boost your revenue",
+   "guaranteed", "act now", "limited time", "free trial", "revolutionary",
+   "cutting-edge", "game-changer". Say the idea in fresh, plain words.
+3. SHORT: 3-5 sentences, under 90 words total. A busy owner skims.
+4. ONE soft call-to-action, phrased as a low-friction question ("worth a quick look?",
+   "want me to send a 30-sec example?"). NOT "book a call".
+5. No links, no attachments, no pricing in the first email (protects deliverability).
+6. Plain, warm, human. Write like one person emailing another, not marketing copy. No
+   buzzwords, no exclamation-mark spam.
+7. Be honest. Do not invent metrics, client names, or claims.
+8. If contact_name is empty, open with "Hi there," or straight into the first line.
+   NEVER write "Hi ," or "Hi {name}".
+9. Vary sentence structure and wording every time. No template feel.
+10. QUESTION-FIRST. Make them FEEL the gap before you pitch. Open (or nearly open)
+    with a short, specific question tied to their signal - e.g. "when you're closed
+    Fridays, where do the booking messages go?" or "when the phone's busy, do website
+    enquiries still reach someone?". A question invites a human to type back; a pitch
+    invites an auto-reply or a brush-off. Only AFTER the question, in one plain line,
+    say what you do. This ordering matters more than any other rule.
+11. ROUTE TO A HUMAN. DMs/messages often land on a business's main line, which is a
+    customer-service inbox (often an auto-responder). So a first-touch dm MAY instead
+    ask who to speak to - e.g. "who runs your front desk / bookings? worth a quick
+    idea for them." - to get routed to the owner/manager rather than answered by a bot.
+12. NO IMPLIED EXPERIENCE, NO FAKE SOCIAL PROOF. The sender has NO clinic/spa/dental
+    clients yet. It is a LIE to write "clinics like yours", "we work with clinics",
+    "our clients", "we've helped other spas", "I've seen clinics like yours",
+    "practices like yours", or to cite any client, result, testimonial, or customer
+    count. NEVER imply a track record in their industry. You may describe what the
+    system DOES; you may NOT claim who it has done it for.
+13. THE OFFER IS A FREE PILOT (risk reversal + honest scarcity). The sender is new to
+    this vertical and is openly building case studies. Say so plainly - it disarms,
+    and it is TRUE. The ask: set it up FREE for a few {city} clinics in exchange for
+    honest feedback / a testimonial if it works. Zero risk for them, proof for the
+    sender. Phrase it fresh each time, e.g. "I'm setting this up free for a few {city}
+    clinics to build case studies - no cost to you, and a testimonial for me if it
+    actually works." NEVER invent a deadline or fake urgency; the scarcity (a few
+    slots) is real, so state it plainly and without pressure. On a FIRST touch the
+    pilot IS the call-to-action - use it, not a generic "want a quick look?". Without
+    a case study or a free trial there is no reason for a stranger to reply, so the
+    email/dm is incomplete if the free pilot is missing. (On later follow-ups you may
+    reference it more briefly instead of restating it in full.)
+
+SUBJECT: short (2-6 words), sentence case, curiosity-driven, specific to them. Reference
+their signal or name. NO product names, NO "never miss", NO "24/7", NO colon-heavy salesy
+structure. Good: "your new {city} location", "saw you're hiring", "after-hours enquiries",
+"Friday booking messages", "your 244 reviews".
+
+SUBJECT ANTI-TEMPLATE RULE: the subject must be anchored to a CONCRETE fact about THEM -
+their signal, their review count, a closed day, a new branch, their neighbourhood. Do NOT
+fall back on the generic frame "quick idea for {business}" (or "quick question about
+{business}"): it carries zero information, and when a dozen of them go out in a week the
+mailbox providers pattern-match the shape. If the only thing you can say is "quick idea",
+you have not looked hard enough at the lead - use their strongest real fact instead.
+
+BODY (your own words each time): (1) their specific signal / a genuine brief nod, as a
+QUESTION where possible (rule 10); (2) the problem it creates (a missed/after-hours
+enquiry that goes to a competitor), plainly; (3) what you do, one plain line (answer
+every call + message, book it automatically); (4) the CTA - preferably the FREE PILOT
+(rule 13), stated honestly, otherwise a soft question. Never more than ONE ask.
+
+GOOGLE ANGLE (optional, only when the qualifying_signal is about missing online
+booking): you MAY replace the "problem it creates" sentence with one plain factual
+line that Google now shows businesses with an online booking option more prominently
+in local search, so being booking-less also costs them visibility. Use it at most
+half the time, phrase it fresh, never as a scare tactic, and keep the 90-word cap.
+
+MEDICAL/AESTHETIC BUSINESSES (med spas, clinics, dental): say the AI books the
+CONSULTATION, never "books the treatment" or sells treatment slots - UAE health
+regulators (DHA) require a consultation before any procedure, and clinic owners
+know it. "books the consultation straight into your calendar" reads as compliant
+and informed; "books the treatment" reads as a liability.
+
+Also produce a "dm" field: the same idea as an Instagram/WhatsApp DM, ~40 words, even
+more casual (email is the weaker channel for these businesses). The dm MUST be
+QUESTION-FIRST per rule 10 - open with the felt-gap question (or the route-to-human
+ask, rule 11), THEN one plain line on what you do, THEN a soft yes/no CTA. Do not
+open a dm with "We add an AI receptionist..." - that phrasing triggers auto-replies.
+
+Also produce an "auto_reply_comeback" field: a SHORT (~30 words) ready reply for when
+their number sends back an automated "we're closed / thanks for contacting us / leave
+your number" message. It must turn that auto-reply INTO the point: their bot just did
+the thing you're offering to fix. Warm, a little cheeky, ends with a soft yes/no.
+e.g. "Ha - that auto-reply is exactly the moment we book the patient for you instead
+of just asking them to wait. Want to see how it'd sound?" Reference their specifics
+when you can. No pressure, no buzzwords.
+
+Return ONLY JSON: {"subject":"...","body":"...","dm":"...","auto_reply_comeback":"..."}
+
+Example A
+INPUT: business_name="Radiance Aesthetics", contact_name="Dr. Sara", qualifying_signal="no online booking link - 'DM to book' in Instagram bio", city="Dubai"
+OUTPUT: {"subject":"booking at Radiance","body":"Hi Dr. Sara, noticed Radiance takes bookings through Instagram DMs, which works great until it gets busy and a few slip through after hours. I set up an AI receptionist for Dubai clinics that answers every call and WhatsApp in seconds and books the slot straight into your calendar, so none get missed. Worth a quick look for Radiance?","dm":"Hi Dr. Sara! Quick one - when the DMs pile up and it's after hours, where do the booking messages go? We set up an AI receptionist that replies instantly and books them straight in. Want a 30-sec example?","auto_reply_comeback":"Ha - that auto-reply is the exact moment we'd have booked the patient instead of leaving them waiting. That's the whole idea. Want to see how it'd sound for Radiance?"}
+
+Example B
+INPUT: business_name="Glow Med Spa", contact_name="", qualifying_signal="opening a second location in Dubai Marina", city="Dubai"
+OUTPUT: {"subject":"your new Marina location","body":"Hi there, congrats on the second Glow Med Spa opening in Dubai Marina. Two locations means twice the calls and DMs, and the ones that come in while your team is with a client are the easiest to lose. We put in an AI receptionist that answers every enquiry instantly, day or night, and books it for you. Want me to send a 30-second example of how it'd sound?","dm":"Congrats on the Marina opening! Quick one - with two locations now, when both front desks are busy, where do the calls and DMs land? We set up an AI receptionist that catches them and books straight in. Worth a quick look?","auto_reply_comeback":"And that's the gap right there - a busy line auto-replies while a booking waits. Ours would've answered and booked it on the spot. Want a quick example for the two locations?"}
+
+Example C (route-to-human + FREE PILOT cta, first touch to a main line)
+INPUT: business_name="Medrose Medical Center", contact_name="", qualifying_signal="closed Fridays; no online booking", city="Dubai"
+OUTPUT: {"subject":"Friday booking messages","body":"Hi there, quick question - when Medrose is closed Fridays, where do the booking messages go? Right now they probably sit until Sunday, and a few patients book elsewhere in between. I set up an AI receptionist that replies instantly and books the consultation, even on your day off. I'm doing it free for a few Dubai clinics right now to build case studies - no cost to you, a testimonial for me if it works. Worth a look?","dm":"Hi! Quick one - when Medrose is closed Fridays, where do the booking messages go till you reopen? And who runs your front desk? I set up something that replies instantly and books the consultation on days off - doing it free for a few Dubai clinics to build case studies. Worth showing them?","auto_reply_comeback":"That's the exact moment I mean - Medrose auto-replies that you're closed, and the patient's booking just waits. Mine would've replied and booked the consultation for Sunday right then. Happy to set it up free as one of my case-study clinics - want to see it?"}
+
+NOTE on honesty: in every example above the sender describes only what the SYSTEM does
+and offers a free pilot. No example claims an existing client, a result, or industry
+experience - because there are none. Keep it that way.
 """
+
+LOCAL_EMAIL_SCHEMA: dict = {
+    "type": "object",
+    "additionalProperties": False,
+    "properties": {
+        "subject": {"type": "string"},
+        "body": {"type": "string"},
+        "dm": {"type": "string"},
+        "auto_reply_comeback": {"type": "string"},
+    },
+    "required": ["subject", "body", "dm", "auto_reply_comeback"],
+}
+
+# en+ar mode: same draft plus an Arabic DM variant (UAE/GCC — Arabic-first owners).
+LOCAL_EMAIL_SCHEMA_AR: dict = {
+    "type": "object",
+    "additionalProperties": False,
+    "properties": {
+        "subject": {"type": "string"},
+        "body": {"type": "string"},
+        "dm": {"type": "string"},
+        "dm_ar": {"type": "string"},
+        "auto_reply_comeback": {"type": "string"},
+    },
+    "required": ["subject", "body", "dm", "dm_ar", "auto_reply_comeback"],
+}
+
+_AR_DM_INSTRUCTION = (
+    'Also produce "dm_ar": the same DM rendered in natural, warm Modern Standard '
+    "Arabic with a light Gulf flavour - NOT a literal word-for-word translation. "
+    "Keep the business name and any platform names in Latin script. Same meaning, "
+    "same soft question ending, still under ~45 words."
+)
 
 
 # ---- WhatsApp problem-aware outreach (Section 1D) --------------------------------
@@ -292,26 +436,73 @@ def generate_outreach(
     follow_up: int = 0,
     variants: int = 2,
     local: bool = False,
+    booking_link: str | None = None,
+    greeting_name: str | None = None,
+    market_fact: str | None = None,
+    language: str = "en",
 ) -> dict:
     """Generate `variants` outreach drafts grounded in real signals. When `local`, use
     the local-business path (cites real Google Places facts, tone-aware)."""
+    cta = cta_instruction(booking_link)
+    greet = (f"Address the recipient by name in the greeting: 'Hi {greeting_name},'. "
+             if greeting_name else
+             "Use a warm greeting; if no real person name is known, avoid a fake name.")
     if local:
         places = (company.get("raw") or {}).get("places") or {}
-        facts = {
-            "name": company.get("name"),
-            "location": company.get("description") or places.get("address"),
-            "google_rating": places.get("rating"),
-            "review_count": places.get("review_count"),
-            "review_signals": [{"kind": s.get("kind"), "label": s.get("label")} for s in signals],
-        }
+        city = _extract_city(company)
+        ranked = _rank_signals(signals)
+        qualifying_signal = ranked[0].get("label") if ranked else None
+        if not qualifying_signal:
+            # No complaint signal (e.g. a premium, high-rated business) -> a genuine,
+            # truthful nod: their standing in the city. Never invented.
+            typ = (places.get("type") or "business").replace("_", " ")
+            rt, rc = places.get("rating"), places.get("review_count")
+            qualifying_signal = (f"well-regarded {typ} in {city} ({rt} stars from {rc} reviews)"
+                                 if rt and rc else f"{typ} in {city}")
+        prefix = "follow-up #%d, keep it fresh and even shorter, " % follow_up if follow_up else ""
+        # Dossier facts (noted from their website/socials/hours before drafting) — all
+        # REAL; the model may weave in at most one for authenticity.
+        dossier = (company.get("raw") or {}).get("dossier") or {}
+        extra_facts: list[str] = []
+        if dossier.get("services"):
+            extra_facts.append("services on their site: " + ", ".join(dossier["services"][:4]))
+        ig = dossier.get("instagram") or {}
+        if ig.get("followers"):
+            extra_facts.append(f"Instagram: {ig['followers']} followers")
+        for g in (dossier.get("hours_gaps") or [])[:1]:
+            extra_facts.append(f"hours: {g}")
+        if market_fact:
+            extra_facts.append(market_fact)
+        facts_line = ("optional_real_facts=" + " | ".join(extra_facts) + "\n") if extra_facts else ""
+        bilingual = language == "en+ar"
+        ar_line = (_AR_DM_INSTRUCTION + " ") if bilingual else ""
+        ret_shape = ('{"subject":...,"body":...,"dm":...,"dm_ar":...}' if bilingual
+                     else '{"subject":...,"body":...,"dm":...}')
         user = (
-            f"TONE: {tone}\nVariants requested: {variants}\n\n"
-            f"REAL facts about this business (use only these — invent nothing):\n{facts}\n\n"
-            "Return `variants` array of {subject, body}."
+            f"{prefix}business_name={company.get('name')}\n"
+            f"contact_name={greeting_name or ''}\n"
+            f"qualifying_signal={qualifying_signal}\n"
+            f"city={city}\n"
+            f"{facts_line}\n"
+            "Write the email + dm. You may weave in AT MOST ONE of the optional_real_facts "
+            f"if it makes the message feel more personal. {ar_line}"
+            f"Return JSON {ret_shape}."
         )
-        return _humanize_variants(complete_json(
-            system=LOCAL_OUTREACH_SYSTEM, user=user,
-            schema_name="Outreach", schema=OUTREACH_JSON_SCHEMA, temperature=0.5))
+        result = complete_json(system=LOCAL_OUTREACH_SYSTEM, user=user,
+                               schema_name="LocalEmailAr" if bilingual else "LocalEmail",
+                               schema=LOCAL_EMAIL_SCHEMA_AR if bilingual else LOCAL_EMAIL_SCHEMA,
+                               temperature=0.6)
+        if not isinstance(result, dict) or result.get("_provider_error"):
+            return {"variants": [], "_provider_error": True}
+        return {
+            "variants": [{"subject": humanize(result.get("subject", "")),
+                          "body": humanize(result.get("body", ""))}],
+            "dm": humanize(result.get("dm", "")),
+            **({"dm_ar": humanize(result.get("dm_ar", ""))}
+               if bilingual and result.get("dm_ar") else {}),
+            **({"auto_reply_comeback": humanize(result.get("auto_reply_comeback", ""))}
+               if result.get("auto_reply_comeback") else {}),
+        }
 
     user = (
         f"Channel: {channel}\nTone: {tone}\nFollow-up #: {follow_up}\n"
@@ -319,6 +510,8 @@ def generate_outreach(
         f"Sender's offering (ICP):\n{icp or {}}\n\n"
         f"Account:\n{company}\n\nContact:\n{contact or 'unknown'}\n\n"
         f"Signals:\n{signals}\n\n"
+        f"GREETING: {greet}\n"
+        f"CTA: {cta}\n\n"
         "Return `variants` array of {subject, body}. For LinkedIn, leave subject empty."
     )
     return _humanize_variants(complete_json(

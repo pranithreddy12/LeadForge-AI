@@ -39,6 +39,8 @@ class SettingsOut(BaseModel):
     outreach_mode: list[str] = ["email"]
     outreach_tone: str = "professional"
     outreach_send_mode: str = "manual"   # manual (draft only) | automated (workflow sends)
+    booking_link: str | None = None
+    draft_language: str = "en"           # en | en+ar (adds an Arabic DM variant)
     max_emails_per_day: int = 50
     max_emails_per_run: int = 25
     # contact finding
@@ -73,6 +75,8 @@ class SettingsUpdate(BaseModel):
     outreach_mode: list[str] = ["email"]
     outreach_tone: Literal["professional", "friendly", "direct"] = "professional"
     outreach_send_mode: Literal["manual", "automated"] = "manual"
+    booking_link: str | None = None
+    draft_language: Literal["en", "en+ar"] = "en"
     max_emails_per_day: int = Field(50, ge=0, le=2000)
     max_emails_per_run: int = Field(25, ge=0, le=500)
     contact_find_hunter: bool = True

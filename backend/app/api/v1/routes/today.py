@@ -20,7 +20,9 @@ from app.models.scoring import LeadScore
 from app.models.signal import Signal
 from app.models.tenant import Organization
 from app.models.workflow import Workflow
+from app.services.presend import mx_ok, spam_flags
 from app.services.settings_resolver import outreach_send_mode
+from app.services.whatsapp_sender import normalize_phone, wa_link
 
 router = APIRouter(prefix="/today", tags=["today"])
 
@@ -57,6 +59,51 @@ def _recipient(db: Session, m: EmailMessage) -> str | None:
     return (m.meta or {}).get("to")
 
 
+def _decision_maker(db: Session, company_id) -> str | None:
+    r = db.execute(
+        select(Contact.name).where(Contact.company_id == company_id,
+                                   Contact.name.ilike("Dr.%"))
+        .order_by(Contact.is_primary.desc()).limit(1)
+    ).first()
+    return r[0] if r else None
+
+
+def _lead_card(db: Session, co: Company, m: EmailMessage | None) -> dict:
+    """The full review card for one lead: score, qualifying signal, all reachable
+    channels (phone/WhatsApp/socials) and the saved draft + DM (if one exists).
+    `m` may be None — the card still returns channels + signal so the lead detail
+    page can show everything and offer to draft."""
+    places = (co.raw or {}).get("places") or {}
+    sc = _latest_score(db, co.id)
+    score, grade = (int(sc[0]) if sc and sc[0] is not None else None,
+                    sc[1] if sc else None)
+    to_addr = _recipient(db, m) if m else None
+    return {
+        "draft_id": str(m.id) if m else None,
+        "draft_status": m.status if m else None,   # 'draft' | 'sent' — so a sent lead's
+                                                   # content is still visible on the page
+        "company_id": str(co.id),
+        "company_name": co.name,
+        "domain": co.domain,
+        "score": score,
+        "grade": grade,
+        "signal": _top_signal(db, co.id),
+        "subject": m.subject if m else None,
+        "body": m.body if m else None,
+        "to": to_addr,
+        "phone": places.get("phone") or (co.raw or {}).get("phone"),
+        "decision_maker": _decision_maker(db, co.id),
+        "email_mx_ok": mx_ok(to_addr) if to_addr else None,
+        "spam_flags": (spam_flags(m.subject) + spam_flags(m.body)) if m else [],
+        "dm": (m.meta or {}).get("dm") if m else None,
+        "dm_ar": (m.meta or {}).get("dm_ar") if m else None,
+        "auto_reply_comeback": (m.meta or {}).get("auto_reply_comeback") if m else None,
+        "wa_link": wa_link(places.get("phone_intl")
+                           or normalize_phone(places.get("phone"))),
+        "socials": (co.raw or {}).get("socials") or {},
+    }
+
+
 @router.get("")
 def todays_leads(db: Session = Depends(get_db), org: Organization = Depends(current_org)):
     """All drafted leads awaiting manual review/send (status='draft'), best score first."""
@@ -65,6 +112,7 @@ def todays_leads(db: Session = Depends(get_db), org: Organization = Depends(curr
             EmailMessage.organization_id == org.id,
             EmailMessage.status == "draft",
             EmailMessage.channel == "email",
+            EmailMessage.step < 2,   # primaries here; follow-ups live on /pipeline
         )
     ).scalars().all()
 
@@ -73,40 +121,107 @@ def todays_leads(db: Session = Depends(get_db), org: Organization = Depends(curr
         co = db.get(Company, m.company_id) if m.company_id else None
         if co is None:
             continue
-        sc = _latest_score(db, co.id)
-        score, grade = (int(sc[0]) if sc and sc[0] is not None else None,
-                        sc[1] if sc else None)
-        leads.append({
-            "draft_id": str(m.id),
-            "company_id": str(co.id),
-            "company_name": co.name,
-            "domain": co.domain,
-            "score": score,
-            "grade": grade,
-            "signal": _top_signal(db, co.id),
-            "subject": m.subject,
-            "body": m.body,
-            "to": _recipient(db, m),
-            "phone": ((co.raw or {}).get("places") or {}).get("phone"),
-        })
+        leads.append(_lead_card(db, co, m))
     leads.sort(key=lambda x: (x["score"] is not None, x["score"] or 0), reverse=True)
-    return {"mode": outreach_send_mode(db, org.id), "count": len(leads), "leads": leads}
+    return {"mode": outreach_send_mode(db, org.id), "count": len(leads), "leads": leads,
+            "send_window": _send_window()}
+
+
+def _send_window() -> dict:
+    """Best-time-to-send hint. Messaging outside business hours reliably hits an
+    auto-responder instead of a human (the exact failure the WhatsApp tests showed),
+    so nudge toward 10:00-17:00 in the UAE (GST = UTC+4, no DST)."""
+    gst_hour = (datetime.utcnow().hour + 4) % 24
+    good = 10 <= gst_hour < 17
+    return {
+        "ok": good,
+        "gst_hour": gst_hour,
+        "hint": ("Good time to send — it's business hours in the UAE, so a human is "
+                 "likely to reply."
+                 if good else
+                 "Outside UAE business hours — messages now usually hit an auto-reply, "
+                 "not a person. Best window: 10:00-17:00 GST."),
+    }
+
+
+@router.get("/company/{company_id}")
+def lead_card(company_id: uuid.UUID, db: Session = Depends(get_db),
+              org: Organization = Depends(current_org)):
+    """The same review card the /today list shows, for ONE lead — so the lead detail
+    page surfaces the saved draft + DM + all channels, not a throwaway regenerate."""
+    co = db.get(Company, company_id)
+    if not co or co.organization_id != org.id:
+        raise NotFound("Company")
+    m = _latest_message(db, org.id, company_id)   # draft OR the sent copy
+    return _lead_card(db, co, m)
+
+
+@router.post("/company/{company_id}/draft")
+def redraft_lead(company_id: uuid.UUID, db: Session = Depends(get_db),
+                 org: Organization = Depends(current_org)):
+    """(Re)draft this one lead using the SAME pipeline path as the daily engine
+    (local mode, dossier, booking link, decision-maker greeting) and save it, so it
+    shows up here and on /today. Replaces any existing unsent draft."""
+    from app.workers.outreach import draft_outreach_for_company
+    co = db.get(Company, company_id)
+    if not co or co.organization_id != org.id:
+        raise NotFound("Company")
+    # Replace only an UNSENT draft; never delete the sent record (it's your history).
+    existing = _draft_for_company(db, org.id, company_id)
+    if existing is not None:
+        db.delete(existing)
+        db.commit()
+    # force=True: an explicit manual click must always produce content, even for a
+    # lead already marked sent/contacted (so you can see/reuse what you sent).
+    draft_outreach_for_company(str(org.id), str(company_id), channel="email", force=True)
+    m = _latest_message(db, org.id, company_id)
+    return _lead_card(db, co, m)
+
+
+_DISCOVER_TYPES = {"discover_companies", "discover_local", "discover_places"}
+_LOCAL_TYPES = {"discover_local", "discover_places"}
 
 
 @router.post("/run", status_code=202)
 def run_discovery(db: Session = Depends(get_db), org: Organization = Depends(current_org)):
-    """Trigger the org's enabled discovery workflow(s) now (the morning 'Run Today's
-    Discovery' button). In manual mode they draft but never send."""
+    """Trigger discovery NOW (the morning 'Run Today's Discovery' button). Runs the
+    workflow matching the current discovery mode, REGARDLESS of the daily-scheduler
+    'enabled' flag — in a manual sprint the workflows are intentionally off for Beat but
+    still runnable on demand here. In manual send mode they draft but never send."""
     from app.workers.workflows import run_workflow_task
-    wfs = db.execute(
-        select(Workflow).where(Workflow.organization_id == org.id,
-                               Workflow.enabled.is_(True))
+    all_wfs = db.execute(
+        select(Workflow).where(Workflow.organization_id == org.id)
     ).scalars().all()
+
+    def types_of(wf):
+        return {s.get("type") for s in (wf.steps or [])}
+
+    disc = [wf for wf in all_wfs if types_of(wf) & _DISCOVER_TYPES]
+    from app.services.settings_resolver import pipeline_config
+    dmode = pipeline_config(db, org.id)["discovery_mode"]
+    if dmode == "local":
+        chosen = [wf for wf in disc if types_of(wf) & _LOCAL_TYPES] or disc
+    else:
+        chosen = [wf for wf in disc if "discover_companies" in types_of(wf)] or disc
+
     kicked = []
-    for wf in wfs:
+    for wf in chosen:
         task = run_workflow_task.delay(str(wf.id))
         kicked.append({"workflow": wf.name, "task_id": task.id})
-    return {"triggered": kicked, "count": len(kicked)}
+    return {"triggered": kicked, "count": len(kicked),
+            "discovery_mode": dmode,
+            "note": ("No discovery workflow found — seed one with "
+                     "`python -m app.cli daily-workflow`." if not kicked else None)}
+
+
+@router.post("/rescan", status_code=202)
+def rescan_signals(db: Session = Depends(get_db), org: Organization = Depends(current_org)):
+    """Fresh-signal re-scan NOW (also runs weekly): refresh Places facts on every
+    uncontacted lead, surface new signals, retire stale ones, re-score what changed.
+    Sends nothing."""
+    from app.workers.signals import rescan_local_signals
+    task = rescan_local_signals.delay(str(org.id))
+    return {"status": "queued", "task_id": task.id}
 
 
 def _draft_for_company(db: Session, org_id, company_id: uuid.UUID) -> EmailMessage | None:
@@ -116,6 +231,21 @@ def _draft_for_company(db: Session, org_id, company_id: uuid.UUID) -> EmailMessa
             EmailMessage.company_id == company_id,
             EmailMessage.status == "draft",
         ).order_by(EmailMessage.created_at.desc()).limit(1)
+    ).scalar_one_or_none()
+
+
+def _latest_message(db: Session, org_id, company_id: uuid.UUID) -> EmailMessage | None:
+    """Latest outreach message for the lead detail page — a DRAFT if one exists, else
+    the most recent SENT one. Without this, marking a lead 'sent' hides its content
+    (the reader only looked for status='draft') AND re-drafting is suppressed, so the
+    copy you sent becomes unreachable."""
+    return db.execute(
+        select(EmailMessage).where(
+            EmailMessage.organization_id == org_id,
+            EmailMessage.company_id == company_id,
+            EmailMessage.status.in_(("draft", "sent")),
+        ).order_by((EmailMessage.status == "draft").desc(),
+                   EmailMessage.created_at.desc()).limit(1)
     ).scalar_one_or_none()
 
 
@@ -141,6 +271,87 @@ def mark_sent(company_id: uuid.UUID, db: Session = Depends(get_db),
         channel="email", action="sent", sent_by_me=True))
     db.commit()
     return {"ok": True, "company": co.name, "logged": "sent"}
+
+
+@router.post("/{company_id}/send-email")
+def send_email_now(company_id: uuid.UUID, db: Session = Depends(get_db),
+                   org: Organization = Depends(current_org)):
+    """Actually SEND this lead's saved draft via the configured Gmail, right now.
+
+    A deliberate, one-lead-at-a-time action (never bulk / never automatic). Every
+    guard the pipeline has still applies at the boundary:
+      - Gmail must be configured (else nothing is attempted);
+      - the lead must not be opted-out / already-contacted (suppression_reason);
+      - there must be a real recipient email, and its domain must have MX;
+      - the org's daily send cap is respected.
+    On success the draft flips to 'sent', the lead advances to 'contacted', and it is
+    written to the manual outreach log — same end state as 'Mark as sent'.
+    """
+    from app.services.email_sender import (daily_cap_remaining, is_configured,
+                                           send_email_message, suppression_reason)
+    co = db.get(Company, company_id)
+    if not co or co.organization_id != org.id:
+        raise NotFound("Company")
+    if not is_configured():
+        return {"sent": False, "reason": "gmail_not_configured",
+                "detail": "Add a Gmail address + app password in Settings first."}
+
+    m = _draft_for_company(db, org.id, company_id)
+    if m is None:
+        return {"sent": False, "reason": "no_draft",
+                "detail": "Generate a draft for this lead before sending."}
+
+    # Hard guards BEFORE we touch SMTP, with human-readable reasons.
+    reason = suppression_reason(db, co)
+    if reason:
+        return {"sent": False, "reason": "suppressed", "detail": reason}
+    to_addr = _recipient(db, m)
+    if not to_addr:
+        return {"sent": False, "reason": "no_recipient_email",
+                "detail": "No email address found for this lead — reach them on WhatsApp."}
+    if not mx_ok(to_addr):
+        return {"sent": False, "reason": "bad_mx",
+                "detail": f"{to_addr} has no valid mail server (MX) — it would bounce."}
+    if daily_cap_remaining(db, org.id) <= 0:
+        return {"sent": False, "reason": "daily_cap_reached",
+                "detail": "You've hit today's send cap. Continue tomorrow."}
+
+    result = send_email_message(db, m)   # marks sent / bounced + stores Message-ID
+    if not result.get("sent"):
+        return {"sent": False, "reason": result.get("reason", "send_failed"),
+                "detail": result.get("reason")}
+
+    # Same downstream bookkeeping as a manual 'Mark as sent'.
+    if co.pipeline_stage in ("new", "qualified"):
+        co.pipeline_stage = "contacted"
+    db.add(ManualOutreachLog(
+        organization_id=org.id, company_id=co.id, company_name=co.name,
+        channel="email", action="sent", sent_by_me=True,
+        notes=f"sent from app to {result.get('to')}"))
+    db.commit()
+    return {"sent": True, "to": result.get("to"), "company": co.name}
+
+
+@router.post("/{company_id}/optout")
+def optout_lead(company_id: uuid.UUID, db: Session = Depends(get_db),
+                org: Organization = Depends(current_org)):
+    """Opt this lead out permanently (they asked not to be contacted, or bad target):
+    register its domain + all contact emails/phone on the do-not-contact list and drop
+    any pending draft. Future discovery/drafting will skip it (PDPL + unsubscribe)."""
+    from app.services.optout import optout_company
+    co = db.get(Company, company_id)
+    if not co or co.organization_id != org.id:
+        raise NotFound("Company")
+    n = optout_company(db, co, reason="manual opt-out from Today", source="manual")
+    m = _draft_for_company(db, org.id, company_id)
+    if m is not None:
+        m.status = "skipped"
+        m.meta = {**(m.meta or {}), "skip_reason": "opted_out"}
+    db.add(ManualOutreachLog(
+        organization_id=org.id, company_id=co.id, company_name=co.name,
+        channel="email", action="skipped", skip_reason="opted_out"))
+    db.commit()
+    return {"ok": True, "company": co.name, "identifiers_suppressed": n}
 
 
 @router.post("/{company_id}/skip")
@@ -194,7 +405,119 @@ def update_log(log_id: uuid.UUID, body: LogUpdate, db: Session = Depends(get_db)
         raise NotFound("LogEntry")
     if body.replied is not None:
         r.replied = body.replied
+        # AUDIT B7: ticking 'replied' on the log used to change nothing else, so the
+        # company sat at 'contacted' forever and the reply never entered the pipeline.
+        # Advance the CRM stage + the message so /pipeline and suppression both see it.
+        if body.replied and r.company_id:
+            _mark_company_replied(db, org.id, r.company_id)
     if body.notes is not None:
         r.notes = body.notes
     db.commit()
     return {"ok": True, "replied": r.replied, "notes": r.notes}
+
+
+def _mark_company_replied(db: Session, org_id, company_id: uuid.UUID) -> bool:
+    """Single place that records 'they replied': advance the CRM stage and flip the
+    sent message to 'replied' so the funnel, /pipeline and follow-up suppression agree."""
+    co = db.get(Company, company_id)
+    if not co or co.organization_id != org_id:
+        return False
+    if co.pipeline_stage in ("new", "qualified", "contacted"):
+        co.pipeline_stage = "replied"
+    m = db.execute(
+        select(EmailMessage).where(EmailMessage.company_id == company_id,
+                                   EmailMessage.status == "sent")
+        .order_by(EmailMessage.created_at.desc()).limit(1)
+    ).scalar_one_or_none()
+    if m is not None:
+        m.status = "replied"
+        m.replied_at = func.now()
+    return True
+
+
+@router.post("/{company_id}/replied")
+def mark_replied(company_id: uuid.UUID, db: Session = Depends(get_db),
+                 org: Organization = Depends(current_org)):
+    """'They replied to me' — the manual counterpart to the IMAP poller. Without this,
+    a reply that lands in Gmail leaves the lead stuck at 'contacted' forever (audit B7)."""
+    if not _mark_company_replied(db, org.id, company_id):
+        raise NotFound("Company")
+    log_row = db.execute(
+        select(ManualOutreachLog).where(ManualOutreachLog.company_id == company_id)
+        .order_by(ManualOutreachLog.created_at.desc()).limit(1)
+    ).scalar_one_or_none()
+    if log_row is not None:
+        log_row.replied = True
+    db.commit()
+    return {"ok": True, "stage": "replied"}
+
+
+# ---- /pipeline: follow-up sequence view --------------------------------------
+pipeline_router = APIRouter(prefix="/pipeline", tags=["today"])
+
+
+@pipeline_router.post("/refresh", status_code=200)
+def refresh_followups(db: Session = Depends(get_db), org: Organization = Depends(current_org)):
+    """Draft any due day-3 / day-6 follow-ups for sent-but-unreplied leads."""
+    from app.workers.outreach import draft_followups_for_org
+    return draft_followups_for_org(db, org.id)
+
+
+@pipeline_router.get("")
+def pipeline(db: Session = Depends(get_db), org: Organization = Depends(current_org)):
+    """Sent leads + any follow-up drafts ready to send (the 'Follow-up ready' queue)."""
+    from datetime import datetime
+    from app.models.manual_outreach import ManualOutreachLog
+    logs = db.execute(
+        select(ManualOutreachLog).where(
+            ManualOutreachLog.organization_id == org.id,
+            ManualOutreachLog.action == "sent",
+        ).order_by(ManualOutreachLog.created_at.desc())
+    ).scalars().all()
+    now = datetime.utcnow()
+    seen: set = set()
+    out = []
+    for lg in logs:
+        if not lg.company_id or lg.company_id in seen:
+            continue
+        seen.add(lg.company_id)
+        co = db.get(Company, lg.company_id)
+        if co is None:
+            continue
+        age = (now - lg.created_at.replace(tzinfo=None)).days if lg.created_at else 0
+        fups = db.execute(
+            select(EmailMessage).where(EmailMessage.company_id == co.id,
+                                       EmailMessage.step >= 2,
+                                       EmailMessage.status == "draft")
+            .order_by(EmailMessage.step)
+        ).scalars().all()
+        out.append({
+            "company_id": str(co.id), "company_name": co.name,
+            "sent_days_ago": age, "replied": lg.replied or co.pipeline_stage == "replied",
+            "followups_ready": [{
+                "draft_id": str(m.id), "step": m.step,
+                "day": (m.meta or {}).get("followup_day"),
+                "subject": m.subject, "body": m.body,
+                "to": _recipient(db, m),
+            } for m in fups],
+        })
+    return {"leads": out}
+
+
+@pipeline_router.post("/{draft_id}/sent")
+def followup_sent(draft_id: uuid.UUID, db: Session = Depends(get_db),
+                  org: Organization = Depends(current_org)):
+    """I sent this follow-up myself — take it off the queue + log it."""
+    m = db.get(EmailMessage, draft_id)
+    if not m or m.organization_id != org.id:
+        raise NotFound("Draft")
+    m.status = "sent"
+    m.sent_at = func.now()
+    m.meta = {**(m.meta or {}), "manual_sent": True}
+    co = db.get(Company, m.company_id) if m.company_id else None
+    db.add(ManualOutreachLog(
+        organization_id=org.id, company_id=m.company_id,
+        company_name=(co.name if co else "lead"), channel="email",
+        action="sent", sent_by_me=True))
+    db.commit()
+    return {"ok": True, "step": m.step}

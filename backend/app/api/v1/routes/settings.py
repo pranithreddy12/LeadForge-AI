@@ -39,6 +39,8 @@ def _serialize(s: Settings) -> SettingsOut:
         outreach_mode=s.outreach_mode or ["email"],
         outreach_tone=s.outreach_tone,
         outreach_send_mode=s.outreach_send_mode or "manual",
+        booking_link=s.booking_link,
+        draft_language=s.draft_language or "en",
         max_emails_per_day=s.max_emails_per_day,
         max_emails_per_run=s.max_emails_per_run,
         contact_find_hunter=bool(s.contact_find_hunter),
@@ -76,7 +78,8 @@ def update_settings(payload: SettingsUpdate, db: Session = Depends(get_db),
     for f in ("discovery_mode", "target_business_types", "target_locations",
               "search_radius_miles", "min_reviews", "max_results_per_run", "icp_name",
               "employee_min", "employee_max", "target_industries", "target_geography",
-              "outreach_mode", "outreach_tone", "outreach_send_mode",
+              "outreach_mode", "outreach_tone", "outreach_send_mode", "booking_link",
+              "draft_language",
               "max_emails_per_day", "max_emails_per_run",
               "contact_find_hunter", "contact_find_scrape", "contact_find_linkedin",
               "validate_emails", "filter_min_score", "filter_enforce_icp_size"):
@@ -111,3 +114,25 @@ def update_settings(payload: SettingsUpdate, db: Session = Depends(get_db),
         from app.services.settings_sync import sync_active_icp_from_settings
         sync_active_icp_from_settings(db, s)
     return _serialize(s)
+
+
+@router.get("/deliverability")
+def deliverability_check(domain: str | None = None,
+                         db: Session = Depends(get_db),
+                         org: Organization = Depends(current_org)):
+    """SPF/DKIM/DMARC/MX preflight for the SENDING domain (Gmail/Yahoo bulk-sender
+    rules, hard-enforced since Nov 2025). Defaults to the configured gmail_address
+    domain; pass ?domain= to check a custom sending domain before switching to it."""
+    from app.services.presend import domain_auth
+    if not domain:
+        s = _get_or_create(db, org.id)
+        if s.gmail_address and "@" in s.gmail_address:
+            domain = s.gmail_address.rsplit("@", 1)[-1]
+    result = domain_auth(domain or "")
+    if (domain or "").lower().endswith("gmail.com"):
+        result["notes"].insert(0, (
+            "You send from a personal Gmail address: Google signs SPF/DKIM/DMARC for "
+            "gmail.com automatically, so this check passing is about Google's domain, "
+            "not yours. Limits still apply (keep volume low, warm up gradually). "
+            "For scale, move to a custom domain and re-check it here."))
+    return result

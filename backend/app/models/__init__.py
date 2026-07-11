@@ -14,3 +14,5 @@ from app.models.billing import Subscription  # noqa: F401
 from app.models.research import AccountResearch  # noqa: F401
 from app.models.settings import Settings  # noqa: F401
 from app.models.manual_outreach import ManualOutreachLog  # noqa: F401
+from app.models.optout import DoNotContact  # noqa: F401
+from app.models.place_cache import PlaceCache  # noqa: F401

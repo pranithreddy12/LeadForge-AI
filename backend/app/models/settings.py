@@ -45,6 +45,12 @@ class Settings(Base, UUIDPk, Timestamps):
     # manual = draft only (review + send yourself on /today); automated = workflow sends.
     # Safe-by-default: manual, so nothing goes out until you flip it on.
     outreach_send_mode: Mapped[str] = mapped_column(String(12), default="manual")
+    # Optional booking/scheduling link injected into every draft's CTA. If empty, the
+    # CTA falls back to "reply to this email" — never "book a slot" without a real link.
+    booking_link: Mapped[str | None] = mapped_column(String(500))
+    # 'en' = English drafts only; 'en+ar' = also produce an Arabic WhatsApp/DM variant
+    # (UAE/GCC table-stakes: Arabic-first owners reply more).
+    draft_language: Mapped[str] = mapped_column(String(10), default="en")
 
     # ---- Contact finding (how the pipeline discovers contact emails) ----
     contact_find_hunter: Mapped[bool] = mapped_column(Boolean, default=True)    # Hunter.io domain search

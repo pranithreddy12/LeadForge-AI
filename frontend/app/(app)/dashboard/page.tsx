@@ -73,11 +73,16 @@ export default function DashboardPage() {
           ))
         ) : (
           <>
-            <KpiCard label={summary.leads_found.label} value={summary.leads_found.value} delta={summary.leads_found.delta_pct} />
-            <KpiCard label={summary.qualified_leads.label} value={summary.qualified_leads.value} delta={summary.qualified_leads.delta_pct} />
-            <KpiCard label={summary.avg_score.label} value={summary.avg_score.value} delta={summary.avg_score.delta_pct} format="decimal" />
-            <KpiCard label={summary.conversion_rate.label} value={summary.conversion_rate.value} delta={summary.conversion_rate.delta_pct} format="percent" />
-            <KpiCard label={summary.revenue.label} value={summary.revenue.value} delta={summary.revenue.delta_pct} format="money" />
+            <KpiCard label={summary.leads_found.label} value={summary.leads_found.value} delta={summary.leads_found.delta_pct}
+                     hint="Companies discovered in the last 7 days." />
+            <KpiCard label={summary.qualified_leads.label} value={summary.qualified_leads.value} delta={summary.qualified_leads.delta_pct}
+                     hint="All leads that ever reached 'qualified' or beyond — not windowed, so it can exceed the 7-day found count." />
+            <KpiCard label={summary.avg_score.label} value={summary.avg_score.value} delta={summary.avg_score.delta_pct} format="decimal"
+                     hint="Average of each lead's most recent score (re-scores don't skew it)." />
+            <KpiCard label={summary.conversion_rate.label} value={summary.conversion_rate.value} delta={summary.conversion_rate.delta_pct} format="percent"
+                     hint="Won ÷ leads actually contacted. Never-contacted leads are excluded." />
+            <KpiCard label={summary.revenue.label} value={summary.revenue.value} delta={summary.revenue.delta_pct} format="money"
+                     hint="Estimated from discovered account revenue. Local businesses carry no revenue data, so this reads — until a deal is won." />
           </>
         )}
       </div>

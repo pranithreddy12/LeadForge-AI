@@ -68,6 +68,21 @@ def suppression_reason(db: Session, company: Company,
     """
     reasons: list[str] = []
 
+    # (e) opt-out / do-not-contact — a hard, permanent, cross-channel block (PDPL +
+    # unsubscribe duty). Checked first because it overrides everything else.
+    from app.services.optout import optout_reason
+    opt = optout_reason(
+        db, company.organization_id,
+        email=(contact.email if contact else None) or (
+            db.execute(select(Contact.email).where(Contact.company_id == company.id,
+                                                    Contact.email.is_not(None)).limit(1)
+                       ).scalar_one_or_none()),
+        phone=((company.raw or {}).get("places") or {}).get("phone"),
+        domain=company.domain,
+    )
+    if opt:
+        reasons.append(opt)
+
     # (c) held / unconfirmed by the qualification gate.
     if company.classification_status == "held_unknown":
         reasons.append("held_unknown: qualification gate has not confirmed this is a buyer")

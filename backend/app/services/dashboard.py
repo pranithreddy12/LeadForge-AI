@@ -38,9 +38,19 @@ def kpi_block(db: Session, organization_id: uuid.UUID) -> dict:
         )
     ).scalar_one() or 0
 
-    avg = db.execute(
-        select(func.coalesce(func.avg(LeadScore.score), 0))
+    # A company is re-scored whenever its signals change, so lead_scores holds MANY
+    # historical rows per company. Averaging them all mixed stale scores into the KPI
+    # (159 rows / 66 companies -> 62.4 instead of the true 56.5). Average the LATEST
+    # score per company only.
+    latest_scores = (
+        select(LeadScore.score)
+        .distinct(LeadScore.company_id)
         .where(LeadScore.organization_id == organization_id)
+        .order_by(LeadScore.company_id, LeadScore.created_at.desc())
+        .subquery()
+    )
+    avg = db.execute(
+        select(func.coalesce(func.avg(latest_scores.c.score), 0))
     ).scalar_one() or 0
 
     won = db.execute(
@@ -49,11 +59,17 @@ def kpi_block(db: Session, organization_id: uuid.UUID) -> dict:
             Company.pipeline_stage == "won",
         )
     ).scalar_one() or 0
-    total = db.execute(
-        select(func.count(Company.id))
-        .where(Company.organization_id == organization_id)
-    ).scalar_one() or 1
-    conv = round(100.0 * won / total, 1)
+    # Conversion must be measured against leads we ACTUALLY worked. Dividing wins by
+    # every company ever discovered (incl. never-contacted ones) makes the rate
+    # meaningless and permanently near-zero as discovery grows.
+    worked = db.execute(
+        select(func.count(Company.id)).where(
+            Company.organization_id == organization_id,
+            Company.pipeline_stage.in_(["contacted", "replied", "meeting",
+                                        "proposal", "won", "lost"]),
+        )
+    ).scalar_one() or 0
+    conv = round(100.0 * won / worked, 1) if worked else 0.0
 
     # Pipeline value is derived from the real per-account revenue we discovered,
     # using a configurable win-rate × deal-size-as-%-of-revenue, NOT a flat
@@ -69,7 +85,16 @@ def kpi_block(db: Session, organization_id: uuid.UUID) -> dict:
     org = db.get(Organization, organization_id)
     deal_pct = float((org.settings or {}).get("deal_size_pct_of_revenue", 0.02)) if org else 0.02
     default_acv = int((org.settings or {}).get("default_acv_usd", 12_000)) if org else 12_000
-    pipeline_value = int(in_flight_revenue * deal_pct) if in_flight_revenue else int(won) * default_acv
+    # Local SMBs (med spas, clinics) carry no revenue_usd — that's a B2B enrichment
+    # field. With no revenue AND no wins there is nothing to derive a value from, so
+    # report None ("—") rather than a confident $0, which reads as "zero pipeline"
+    # when the truth is "we have no basis to estimate".
+    if in_flight_revenue:
+        pipeline_value = int(in_flight_revenue * deal_pct)
+    elif won:
+        pipeline_value = int(won) * default_acv
+    else:
+        pipeline_value = None
 
     return {
         "leads_found": {
@@ -77,18 +102,20 @@ def kpi_block(db: Session, organization_id: uuid.UUID) -> dict:
             "value": int(leads_this),
             "delta_pct": round(100.0 * (leads_this - leads_prev) / max(1, leads_prev), 1),
         },
+        # Explicitly labelled "all time" — it is NOT windowed like leads_found, so
+        # qualified (47) legitimately exceeds leads found in 7d (42).
         "qualified_leads": {
-            "label": "Qualified leads",
+            "label": "Qualified leads (all time)",
             "value": int(qualified),
             "delta_pct": None,
         },
         "avg_score": {
-            "label": "Avg lead score",
+            "label": "Avg lead score (latest)",
             "value": round(float(avg), 1),
             "delta_pct": None,
         },
         "conversion_rate": {
-            "label": "Conversion rate",
+            "label": "Conversion (won / contacted)",
             "value": conv,
             "delta_pct": None,
         },

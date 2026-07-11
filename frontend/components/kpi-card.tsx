@@ -9,13 +9,18 @@ export function KpiCard({
   value,
   delta,
   format = "count",
+  hint,
 }: {
   label: string;
-  value: number;
+  value: number | null;
   delta?: number | null;
   format?: "count" | "money" | "percent" | "decimal";
+  hint?: string;
 }) {
+  // null = "no basis to compute this" -> em-dash. Never render a confident 0, which
+  // reads as a real zero (e.g. "$0 pipeline") when the truth is "unknown".
   const display =
+    value == null ? "—" :
     format === "count" ? fmtCount(value) :
     format === "money" ? "$" + fmtCount(value) :
     format === "percent" ? `${value.toFixed(1)}%` :
@@ -23,7 +28,7 @@ export function KpiCard({
 
   const up = (delta ?? 0) >= 0;
   return (
-    <Card className="p-5">
+    <Card className="p-5" title={hint}>
       <div className="text-xs text-muted-foreground">{label}</div>
       <div className="mt-2 flex items-baseline justify-between gap-2">
         <div className="text-2xl font-semibold tracking-tight">{display}</div>

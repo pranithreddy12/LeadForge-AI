@@ -72,8 +72,19 @@ celery.conf.beat_schedule = {
         "task": "app.workers.outreach.send_scheduled_emails",
         "schedule": crontab(minute="23"),
     },
+    "draft-followups-daily": {
+        "task": "app.workers.outreach.draft_followups",
+        "schedule": crontab(hour="8", minute="30"),
+    },
     "retry-held-unknowns-hourly": {
         "task": "app.workers.reclassify.retry_held_unknowns",
         "schedule": crontab(minute="17"),
+    },
+    # Fresh-signal re-scan of uncontacted local leads (rating drift, booking widget
+    # appearing, hours changes). Weekly - each scan refetches Place Details per lead,
+    # so keep it infrequent. Sends nothing.
+    "rescan-local-signals-weekly": {
+        "task": "app.workers.signals.rescan_local_signals",
+        "schedule": crontab(day_of_week="mon", hour="6", minute="41"),
     },
 }

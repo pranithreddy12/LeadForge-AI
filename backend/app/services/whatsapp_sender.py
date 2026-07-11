@@ -59,6 +59,24 @@ def normalize_phone(raw: str | None) -> str | None:
     return None
 
 
+def wa_link(phone: str | None) -> str | None:
+    """WhatsApp click-to-chat link (https://wa.me/<digits>) from a phone number that
+    already carries its country code (e.g. Places internationalPhoneNumber, or a
+    +E.164 value). Returns None if there's no usable country code."""
+    if not phone:
+        return None
+    p = str(phone).strip()
+    digits = re.sub(r"\D", "", p)
+    if not digits:
+        return None
+    # A national number (leading 0, no '+') has no country code -> can't build a link.
+    if not p.startswith("+") and digits.startswith("0"):
+        return None
+    if not (8 <= len(digits) <= 15):
+        return None
+    return f"https://wa.me/{digits}"
+
+
 def is_configured(db: Session, organization_id: uuidlib.UUID) -> bool:
     pid = resolve_credential(db, organization_id, "whatsapp_phone_number_id")
     tok = resolve_credential(db, organization_id, "whatsapp_access_token")

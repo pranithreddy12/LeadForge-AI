@@ -58,6 +58,33 @@ log = get_logger("workers.workflows")
 # ---- step handlers ----------------------------------------------------------
 
 
+def _resolve_icp_id(db, org_id: uuid.UUID, config: dict, ctx: dict) -> uuid.UUID | None:
+    """Resolve the ICP a step should use, resilient to a DELETED ICP.
+
+    A workflow bakes an icp_id into its step configs at creation time. If that ICP
+    is later deleted (e.g. cleaning up test ICPs), db.get() returns None and the step
+    silently fails — discovery keeps working (it reads the *active* ICP) while scoring
+    reports 0. So: prefer the configured/ctx id, but if it no longer resolves, fall
+    back to the org's active ICP and cache it into ctx so later steps agree.
+    """
+    from app.services.icp import get_active_icp
+    raw = config.get("icp_id") or ctx.get("icp_id")
+    if raw is not None:
+        try:
+            icp_id = uuid.UUID(str(raw))
+        except (ValueError, TypeError):
+            icp_id = None
+        if icp_id is not None and db.get(ICP, icp_id) is not None:
+            return icp_id
+        log.warning("icp_id_stale_falling_back_to_active", org=str(org_id),
+                    configured_icp=str(raw))
+    active = get_active_icp(db, org_id)
+    if active is None:
+        return None
+    ctx["icp_id"] = str(active.id)  # later steps reuse the same resolved ICP
+    return active.id
+
+
 def _step_discover_local(db, org_id: uuid.UUID, ctx: dict, config: dict) -> dict:
     """Local-SMB discovery via Google Places, driven by Settings (Step 5). Nothing-
     static: no Places key -> empty result, logged, no crash."""
@@ -119,8 +146,11 @@ def _step_discover_places(db, org_id: uuid.UUID, ctx: dict, config: dict) -> dic
     optional queries[]. Held-unknown filtering not needed (Places results are real
     verified businesses, not noisy SERP candidates)."""
     from app.services.discovery import discover_via_places
-    icp_id = uuid.UUID(config.get("icp_id") or ctx["icp_id"])
-    icp = db.get(ICP, icp_id)
+    icp_id = _resolve_icp_id(db, org_id, config, ctx)
+    icp = db.get(ICP, icp_id) if icp_id else None
+    if icp is None:
+        return {"company_ids": ctx.get("company_ids", []), "delta": 0,
+                "error": "no_active_icp"}
     cands = discover_via_places(icp, limit=int(config.get("limit", 20)),
                                 queries=config.get("queries"))
     rows = persist_candidates(db, organization_id=org_id, icp=icp, candidates=cands)
@@ -145,14 +175,22 @@ def _step_enrich(db, org_id: uuid.UUID, ctx: dict, _config: dict) -> dict:
 
 
 def _step_detect_local_signals(db, org_id: uuid.UUID, ctx: dict, _config: dict) -> dict:
-    """Review/website-based signals for local businesses (Step 6)."""
+    """Local-business intelligence pass: build the per-lead DOSSIER (website menu,
+    socials/IG meta, hours gaps) FIRST, then detect signals from it — so scoring and
+    drafting downstream work from everything we noted, not just the raw Places row."""
+    from app.services.dossier import build_dossier
     from app.services.local_signals import detect_local_signals
-    n = 0
+    n = dossiers = 0
     for cid in ctx.get("company_ids", []):
         c = db.get(Company, uuid.UUID(cid))
         if c:
+            try:
+                build_dossier(db, c)
+                dossiers += 1
+            except Exception as e:
+                log.warning("dossier_failed", company=cid, error=str(e)[:120])
             n += len(detect_local_signals(db, c))
-    return {"signals_created": n, "kind": "local"}
+    return {"signals_created": n, "dossiers": dossiers, "kind": "local"}
 
 
 def _step_signals(db, org_id: uuid.UUID, ctx: dict, _config: dict) -> dict:
@@ -206,8 +244,11 @@ def _step_validate_emails(db, org_id: uuid.UUID, ctx: dict, _config: dict) -> di
 
 
 def _step_score(db, org_id: uuid.UUID, ctx: dict, config: dict) -> dict:
-    icp_id = uuid.UUID(config.get("icp_id") or ctx["icp_id"])
+    icp_id = _resolve_icp_id(db, org_id, config, ctx)
     company_ids = ctx.get("company_ids") or []
+    if icp_id is None:
+        log.warning("score_skipped_no_icp", org=str(org_id))
+        return {"scored": 0, "by_grade": {}, "no_icp": True}
     scored = 0
     grades: dict[str, int] = {}
     for cid in company_ids:
@@ -478,7 +519,8 @@ def _draft_scheduled_email(db, org_id: uuid.UUID, company: Company,
         return {c.key: getattr(r, c.key) for c in r.__table__.columns} if r else None
 
     raw = generate_outreach(company=_row(company), contact=_row(contact), icp=_row(icp),
-                            signals=signals, channel="email", tone=eff_tone, local=is_local)
+                            signals=signals, channel="email", tone=eff_tone, local=is_local,
+                            booking_link=(s.booking_link if s else None))
     variants = (raw or {}).get("variants") or []
     if not variants:
         log.info("schedule_email_no_draft", company=str(company.id))
@@ -590,8 +632,8 @@ def _step_filter(db, org_id: uuid.UUID, ctx: dict, config: dict) -> dict:
     emp_min = config.get("employee_min")
     emp_max = config.get("employee_max")
     if enforce_size:
-        icp_id = config.get("icp_id") or ctx.get("icp_id")
-        icp = db.get(ICP, uuid.UUID(str(icp_id))) if icp_id else None
+        icp_id = _resolve_icp_id(db, org_id, config, ctx)
+        icp = db.get(ICP, icp_id) if icp_id else None
         if icp:
             emp_min = emp_min if emp_min is not None else icp.employee_min
             emp_max = emp_max if emp_max is not None else icp.employee_max
@@ -650,8 +692,13 @@ def _step_add_to_crm(db, org_id: uuid.UUID, ctx: dict, config: dict) -> dict:
     sent_company_ids), advance only those. `only_sent: true` forces it explicitly.
     Pre-send stages (e.g. 'qualified') still advance the whole filtered set."""
     stage = config.get("stage", "qualified")
+    # In MANUAL mode nothing is auto-sent, so a lead must NOT be marked contacted-or-
+    # beyond by the workflow — the human marks it sent on /today. Gate those stages on
+    # actual sends (which are 0 in manual mode) so leads stay reviewable.
+    from app.services.settings_resolver import outreach_send_mode
+    manual = outreach_send_mode(db, org_id) == "manual"
     gate_on_send = config.get("only_sent") or (
-        stage in _CONTACTED_STAGES and "sent_company_ids" in ctx)
+        stage in _CONTACTED_STAGES and ("sent_company_ids" in ctx or manual))
     ids = ctx.get("sent_company_ids", []) if gate_on_send else ctx.get("company_ids", [])
     n = 0
     for cid in ids:

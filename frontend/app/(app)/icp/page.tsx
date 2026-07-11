@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { Sparkles, Loader2 } from "lucide-react";
+import { Sparkles, Loader2, CheckCircle2, Trash2, RefreshCw } from "lucide-react";
 import { motion } from "framer-motion";
 
 import { api } from "@/lib/api";
@@ -39,14 +39,38 @@ export default function ICPPage() {
     onError: (e: any) => toast.error(e.message || "Failed to generate ICP"),
   });
 
+  const rescore = useMutation({
+    mutationFn: () => api.post(`/icps/rescore-leads`),
+    onSuccess: () => toast.success("Re-scoring & re-drafting every lead against the active ICP — check /today in a minute."),
+    onError: (e: any) => toast.error(e.message || "Could not start re-scoring"),
+  });
+
+  const activeIcp = list.data?.items.find((i) => (i as any).is_active);
+
   return (
     <div className="space-y-6">
-      <div className="flex items-end justify-between gap-4">
+      <div className="flex items-end justify-between gap-4 flex-wrap">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">AI ICP Generator</h1>
           <p className="text-sm text-muted-foreground">
             Describe your business and we'll build your ideal customer profile.
           </p>
+        </div>
+        <div className="flex flex-col items-end gap-1">
+          <Button
+            variant="outline"
+            disabled={!activeIcp || rescore.isPending}
+            onClick={() => rescore.mutate()}
+            title={activeIcp ? `Re-score every lead against "${activeIcp.name}"` : "Activate an ICP first"}
+          >
+            {rescore.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+            Re-score & re-draft all leads
+          </Button>
+          {activeIcp && (
+            <span className="text-[11px] text-muted-foreground">
+              Active: <span className="text-brand-300">{activeIcp.name}</span>
+            </span>
+          )}
         </div>
       </div>
 
@@ -101,10 +125,34 @@ export default function ICPPage() {
 }
 
 function ICPCard({ icp }: { icp: ICP }) {
+  const qc = useQueryClient();
+  const active = (icp as any).is_active;
+
+  const activate = useMutation({
+    mutationFn: () => api.post<ICP>(`/icps/${icp.id}/activate`),
+    onSuccess: () => {
+      toast.success(`"${icp.name}" is now your active ICP`);
+      qc.invalidateQueries({ queryKey: ["icps"] });
+    },
+    onError: (e: any) => toast.error(e.message || "Could not activate"),
+  });
+
+  const del = useMutation({
+    mutationFn: () => api.delete(`/icps/${icp.id}`),
+    onSuccess: () => {
+      toast.success(`Deleted "${icp.name}"`);
+      qc.invalidateQueries({ queryKey: ["icps"] });
+    },
+    onError: (e: any) => toast.error(e.message || "Could not delete"),
+  });
+
   return (
-    <Card>
+    <Card className={active ? "border-brand-500/40" : undefined}>
       <CardHeader>
-        <CardTitle>{icp.name}</CardTitle>
+        <CardTitle className="flex items-center justify-between gap-2">
+          <span>{icp.name}</span>
+          {active && <Badge variant="brand">Active — used by the daily engine</Badge>}
+        </CardTitle>
         <CardDescription>{icp.summary}</CardDescription>
       </CardHeader>
       <CardContent className="space-y-3 text-sm">
@@ -118,6 +166,28 @@ function ICPCard({ icp }: { icp: ICP }) {
           {icp.revenue_min_usd && (
             <span>Revenue: ${(icp.revenue_min_usd/1e6).toFixed(0)}M – ${(icp.revenue_max_usd ?? 0)/1e6}M</span>
           )}
+        </div>
+        <div className="flex items-center gap-2 pt-2 border-t border-white/5">
+          {active ? (
+            <Button size="sm" variant="ghost" disabled className="text-brand-300">
+              <CheckCircle2 className="h-3.5 w-3.5" /> Active
+            </Button>
+          ) : (
+            <Button size="sm" variant="glow" onClick={() => activate.mutate()} disabled={activate.isPending}>
+              {activate.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle2 className="h-3.5 w-3.5" />}
+              Use this ICP
+            </Button>
+          )}
+          <Button
+            size="sm" variant="ghost"
+            className="ml-auto text-red-400 hover:text-red-300"
+            disabled={active || del.isPending}
+            title={active ? "Activate another ICP before deleting this one" : "Delete this ICP"}
+            onClick={() => { if (confirm(`Delete "${icp.name}"? This cannot be undone.`)) del.mutate(); }}
+          >
+            {del.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
+            Delete
+          </Button>
         </div>
       </CardContent>
     </Card>

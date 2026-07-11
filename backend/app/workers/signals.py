@@ -34,6 +34,56 @@ def detect_signals_task(self, organization_id: str, company_id: str):
         return {"signals": len(signals)}
 
 
+@shared_task(name="app.workers.signals.rescan_local_signals")
+def rescan_local_signals(organization_id: str | None = None) -> dict:
+    """Fresh-signal re-scan for UNCONTACTED local leads: refresh Places facts, detect
+    new signals, resolve stale ones (booking widget appeared), re-score changed leads.
+    Weekly beat + on-demand from /today. Sends NOTHING."""
+    from app.services.icp import get_active_icp
+    from app.services.rescan import rescan_company
+    from app.services.scoring import score_company
+    from app.services.settings_resolver import pipeline_config, resolve_credential
+
+    with task_session() as db:
+        if organization_id:
+            org_ids = [uuid.UUID(organization_id)]
+        else:
+            org_ids = db.execute(select(Company.organization_id).distinct()).scalars().all()
+        totals = {"scanned": 0, "changed": 0, "new_signals": 0, "resolved": 0,
+                  "rescored": 0}
+        for oid in org_ids:
+            if pipeline_config(db, oid).get("discovery_mode") != "local":
+                continue  # B2B signals refresh on their own path
+            key = resolve_credential(db, oid, "google_places_api_key") or None
+            icp = get_active_icp(db, oid)
+            companies = db.execute(
+                select(Company).where(
+                    Company.organization_id == oid,
+                    Company.pipeline_stage.in_(("new", "qualified")))
+            ).scalars().all()
+            for c in companies:
+                try:
+                    r = rescan_company(db, c, key)
+                except Exception as e:
+                    log.warning("rescan_failed", company=str(c.id), error=str(e)[:120])
+                    continue
+                totals["scanned"] += 1
+                if r["changes"] or r["new"] or r["resolved"]:
+                    totals["changed"] += 1
+                    totals["new_signals"] += len(r["new"])
+                    totals["resolved"] += len(r["resolved"])
+                    if icp is not None and (r["new"] or r["resolved"]):
+                        try:
+                            score_company(db, organization_id=oid, company_id=c.id,
+                                          icp_id=icp.id, with_opportunity=False)
+                            totals["rescored"] += 1
+                        except Exception as e:
+                            log.warning("rescan_rescore_failed", company=str(c.id),
+                                        error=str(e)[:120])
+        log.info("rescan_local_signals_done", **totals)
+        return totals
+
+
 @shared_task(name="app.workers.signals.refresh_active_companies")
 def refresh_active_companies():
     """Hourly beat — refresh signals on any company that was created in the last

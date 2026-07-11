@@ -86,8 +86,10 @@ def _strip_html(html: str) -> str:
     return re.sub(r"\n{3,}", "\n\n", text)[:30_000]
 
 
-def fetch_static(url: str, *, timeout: float = 15.0) -> str:
-    """Cheap static fetch; falls back to Playwright when content looks JS-shelled."""
+def fetch_static(url: str, *, timeout: float = 15.0, allow_playwright: bool = True) -> str:
+    """Cheap static fetch; falls back to Playwright when content looks JS-shelled.
+    Pass allow_playwright=False for fast, best-effort static-only fetches (e.g. bulk
+    name scraping) that must not pay the headless-browser cost per page."""
     if not _guard(url):
         return ""
     try:
@@ -104,7 +106,7 @@ def fetch_static(url: str, *, timeout: float = 15.0) -> str:
     except Exception as e:
         log.info("static_fetch_failed", url=url, error=str(e))
 
-    if not settings.feature_playwright_scrape:
+    if not (allow_playwright and settings.feature_playwright_scrape):
         return ""
 
     if not _guard(url):   # re-check before the headless browser navigates
@@ -198,6 +200,136 @@ def scrape_emails_for_domain(domain: str, *, max_pages: int = 6) -> list[str]:
                 continue
             found.setdefault(e, None)
     return list(found.keys())
+
+
+# ---- decision-maker (dentist/owner) name scraping -------------------------------
+
+_DR_RE = re.compile(r"\bDr\.?\s+([A-Z][a-zA-Z'\-]{1,}\s+[A-Z][a-zA-Z'\-]{1,})\b")
+# Words that follow "Dr." but are NOT a person (street names, section headers, etc.)
+_NAME_STOP = {
+    "Blvd", "Suite", "Street", "St", "Ave", "Avenue", "Road", "Rd", "Drive", "Dr",
+    "Dental", "Office", "Clinic", "Group", "Care", "Health", "Today", "Now", "Here",
+    "Our", "The", "Us", "Team", "Pepper", "Who", "Why", "What", "Phone", "Email",
+    "Address", "Google", "Reviews", "Recommended", "Visit", "Welcome", "Meet", "About",
+    "Martin", "King", "Parkway", "Pkwy", "Lane", "Ln", "Court", "Ct", "Way", "North",
+    "South", "East", "West", "New", "Family", "Smile", "Smiles", "Practice",
+    "Executive", "Coach", "Marketing", "Strategist", "Consultant", "Author", "Speaker",
+    "Founder", "CEO", "President", "Owner", "Reviews", "Patients", "Insurance",
+    "Emergency", "Cosmetic", "General", "Pediatric", "Implant", "Sedation",
+}
+_PERSON_PATHS = ("/about", "/about-us", "/team", "/our-team", "/meet-the-team",
+                 "/meet-the-doctor", "/doctors", "/our-doctors", "/dentists", "/staff",
+                 "/providers", "/our-dentist", "")
+
+
+_CRED = {"DMD", "DDS", "MD", "PHD", "JR", "SR", "II", "III", "FAGD", "MS", "MAGD"}
+
+
+def _clean_person(name: str) -> str:
+    toks = name.split()
+    while toks and toks[-1].strip(".,").upper() in _CRED:
+        toks.pop()
+    return " ".join(toks)
+
+
+def scrape_decision_makers(domain: str, *, max_static_pages: int = 8) -> list[str]:
+    """Best-effort: pull dentist/owner names ('Dr. Jane Smith') from a practice's
+    About/Team/Doctors pages. Returns unique 'Dr. <Name>' strings, most-frequent first.
+    STATIC-ONLY (no Playwright) so it stays fast per company. SSRF-guarded. Filters
+    street-name / header false positives + credential suffixes (DMD/DDS)."""
+    if not domain:
+        return []
+    freq: dict[str, int] = {}
+    fetched = 0
+    for path in _PERSON_PATHS:
+        if fetched >= max_static_pages:
+            break
+        text = fetch_static(f"https://{domain}{path}", timeout=8.0, allow_playwright=False)
+        if not text:
+            continue
+        fetched += 1
+        for m in _DR_RE.finditer(text):
+            name = _clean_person(re.sub(r"\s+", " ", m.group(1)).strip())
+            parts = name.split()
+            if len(parts) < 2 or parts[0] in _NAME_STOP or any(w in _NAME_STOP for w in parts):
+                continue  # require First + Last, no header/street tokens
+            freq[f"Dr. {name}"] = freq.get(f"Dr. {name}", 0) + 1
+    names = [n for n, _ in sorted(freq.items(), key=lambda x: -x[1])]
+    # Drop a name that is a strict prefix of a longer captured one ("Dr. John" vs
+    # "Dr. John Glennon").
+    out = [n for n in names if not any(o != n and o.startswith(n + " ") for o in names)]
+    return out[:5]
+
+
+_PHONE_RE = re.compile(
+    r"(?<!\d)(\+?1[\s.\-]?)?\(?\d{3}\)?[\s.\-]\d{3}[\s.\-]\d{4}(?!\d)")
+_PHONE_PATHS = ("", "/contact", "/contact-us", "/about")
+
+
+def scrape_phone(domain: str) -> str | None:
+    """Best-effort practice phone from the homepage/contact page (static-only, fast)."""
+    if not domain:
+        return None
+    for path in _PHONE_PATHS:
+        text = fetch_static(f"https://{domain}{path}", timeout=8.0, allow_playwright=False)
+        if not text:
+            continue
+        m = _PHONE_RE.search(text)
+        if m:
+            return re.sub(r"\s+", " ", m.group(0)).strip()
+    return None
+
+
+# ---- social-profile scraping (their own site links its socials) -----------------
+
+# platform -> (url regex, junk path fragments to reject)
+_SOCIAL_PATTERNS: dict[str, tuple[re.Pattern, tuple[str, ...]]] = {
+    "instagram": (re.compile(r"https?://(?:www\.)?instagram\.com/([A-Za-z0-9_.]{2,40})/?", re.I),
+                  ("/p/", "/reel/", "/explore", "/accounts", "sharer")),
+    "facebook": (re.compile(r"https?://(?:www\.)?facebook\.com/([A-Za-z0-9_.\-]{2,60})/?", re.I),
+                 ("sharer", "share.php", "/plugins", "/dialog", "photo.php", "/events/",
+                  "/posts/", "/watch")),
+    "linkedin": (re.compile(r"https?://(?:[a-z]{2,3}\.)?linkedin\.com/(company|in)/([A-Za-z0-9_.\-%]{2,80})/?", re.I),
+                 ("/share", "shareArticle")),
+    "tiktok": (re.compile(r"https?://(?:www\.)?tiktok\.com/@([A-Za-z0-9_.]{2,40})/?", re.I),
+               ("/video/",)),
+    "youtube": (re.compile(r"https?://(?:www\.)?youtube\.com/(@[A-Za-z0-9_.\-]{2,60}|channel/[A-Za-z0-9_\-]{10,40})/?", re.I),
+                ("/watch", "/embed", "/shorts")),
+    "whatsapp": (re.compile(r"https?://(?:wa\.me|api\.whatsapp\.com/send)[^\s\"'<>]*", re.I),
+                 ()),
+}
+_SOCIAL_GENERIC = {"instagram": ("instagram", "accounts"), "facebook": ("facebook", "pages")}
+
+
+def scrape_social_links(domain: str, *, max_pages: int = 3) -> dict[str, str]:
+    """Pull the business's OWN social profiles (Instagram/Facebook/LinkedIn/TikTok/
+    YouTube + a site-published WhatsApp link) from its website header/footer.
+    Static-only (fast), SSRF-guarded. Returns {platform: url} — first hit per platform,
+    share/post links rejected. Self-attributed by construction (their site, their links)."""
+    if not domain:
+        return {}
+    out: dict[str, str] = {}
+    for path in ("", "/contact", "/contact-us")[:max_pages]:
+        html = fetch_raw_html(f"https://{domain}{path}")
+        if not html:
+            continue
+        for platform, (rx, junk) in _SOCIAL_PATTERNS.items():
+            if platform in out:
+                continue
+            for m in rx.finditer(html):
+                url = m.group(0).rstrip("/\"'")
+                low = url.lower()
+                if any(j in low for j in junk):
+                    continue
+                # reject bare platform homepages ("instagram.com/") and generic slugs
+                handle = (m.group(1) if m.lastindex else "").lower().strip("/")
+                if platform in _SOCIAL_GENERIC and handle in _SOCIAL_GENERIC[platform]:
+                    continue
+                out[platform] = url
+                break
+        if len(out) >= len(_SOCIAL_PATTERNS):
+            break
+    return out
 
 
 # Heuristics for finding the careers/jobs page of a domain.

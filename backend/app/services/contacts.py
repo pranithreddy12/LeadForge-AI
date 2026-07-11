@@ -148,6 +148,31 @@ def discover_contacts_for_company(db: Session, company: Company) -> list[Contact
                      source="scraped", n=len(scraped),
                      hunter_empty=True)
 
+    # ---- 4. Decision-maker names (Dr./owner) from About/Team pages -----------
+    if company.domain and cfg["contact_find_scrape"]:
+        from app.services.scraper import scrape_decision_makers
+        people = scrape_decision_makers(company.domain)
+        for i, full_name in enumerate(people):
+            new_contacts.append(_make_contact(
+                company, name=full_name, title="Owner/Dentist", personas=personas,
+                # The named decision-maker leads the greeting; primary only if no phone.
+                is_primary=(i == 0 and not places_phone)))
+        if people:
+            log.info("decision_makers_found", company=str(company.id), names=people[:3])
+
+    # ---- 5. Social profiles (Instagram/Facebook/LinkedIn/TikTok/YouTube/WhatsApp)
+    # from their own website — for local SMBs Instagram is often THE channel.
+    if company.domain and cfg["contact_find_scrape"]:
+        from sqlalchemy.orm.attributes import flag_modified
+        from app.services.scraper import scrape_social_links
+        socials = scrape_social_links(company.domain)
+        if socials:
+            company.raw = {**(company.raw or {}), "socials": socials}
+            flag_modified(company, "raw")
+            db.commit()
+            log.info("socials_found", company=str(company.id),
+                     platforms=list(socials.keys()))
+
     persisted = _persist(db, company, new_contacts)
     return persisted
 

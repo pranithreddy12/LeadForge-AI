@@ -159,6 +159,21 @@ def _record_reply(db, message: EmailMessage, msg) -> int:
     if company and company.pipeline_stage in ("new", "qualified", "contacted"):
         company.pipeline_stage = "replied"
 
+    # Auto opt-out: an "unsubscribe / stop / remove me" reply is a legal do-not-contact
+    # request (PDPL + unsubscribe duty). Register the sender + company immediately.
+    from app.services.optout import add_optout, detect_optout, normalize_email
+    if detect_optout(snippet):
+        sender_email = normalize_email(
+            (contact.email if contact else None) or (message.meta or {}).get("to"))
+        if sender_email:
+            add_optout(db, message.organization_id, sender_email, kind="email",
+                       reason="replied unsubscribe/stop", source="reply",
+                       company_id=message.company_id)
+        if company and company.domain:
+            add_optout(db, message.organization_id, company.domain, kind="domain",
+                       reason="replied unsubscribe/stop", source="reply",
+                       company_id=company.id)
+
     # Enrich the reply alert with the same context as the WhatsApp path: grade/score,
     # the driving signal, an AI-suggested next reply, and contact handles.
     from app.ai.outreach_engine import generate_suggested_reply

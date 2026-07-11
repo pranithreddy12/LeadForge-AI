@@ -50,6 +50,33 @@ def score_company(db: Session, *, organization_id: uuid.UUID,
         select(Contact).where(Contact.company_id == company.id)
     ).scalars().all()
 
+    # LOCAL-mode businesses are graded on the AI-receptionist fit (no online booking,
+    # reachable, demand, complaint signals), NOT the B2B employee/funding model.
+    from app.services.settings_resolver import settings_row
+    _s = settings_row(db, organization_id)
+    if _s is not None and _s.discovery_mode == "local":
+        from app.services.local_scoring import score_local_fit
+        # Score AGAINST the ICP: its target vertical (industries + keywords) and
+        # geography (countries + Settings target_locations).
+        icp_terms = list(icp.industries or []) + list(icp.keywords or [])
+        icp_geos = list(icp.countries or []) + list(_s.target_locations or [])
+        lf = score_local_fit(
+            company_name=company.name, industry=company.industry,
+            places=(company.raw or {}).get("places") or {},
+            signal_kinds=[s.kind for s in signals],
+            icp_terms=icp_terms, icp_geos=icp_geos,
+            min_reviews=_s.min_reviews or 10)
+        score = LeadScore(
+            organization_id=organization_id, company_id=company.id, icp_id=icp.id,
+            score=lf["score"], grade=lf["grade"], probability=lf["probability"],
+            fit_score=lf["fit_score"], funding_score=0, hiring_score=0, growth_score=0,
+            tech_match_score=0, email_score=0, activity_score=lf["pain_score"],
+            reasoning=lf["reasoning"], pain_points=[], raw={"local_fit": True})
+        db.add(score)
+        db.commit()
+        db.refresh(score)
+        return score
+
     result = score_lead(ScoreInput(
         icp=_row_as_dict(icp),
         company=_row_as_dict(company),

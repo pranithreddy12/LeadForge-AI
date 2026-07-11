@@ -101,6 +101,25 @@ export interface TodayLead {
   body: string;
   to?: string | null;
   phone?: string | null;
+  decision_maker?: string | null;
+  email_mx_ok?: boolean | null;
+  spam_flags?: string[];
+  dm?: string | null;
+  dm_ar?: string | null;
+  auto_reply_comeback?: string | null;
+  wa_link?: string | null;
+  socials?: Record<string, string>;
+}
+
+export interface PipelineLead {
+  company_id: ID;
+  company_name: string;
+  sent_days_ago: number;
+  replied: boolean;
+  followups_ready: Array<{
+    draft_id: ID; step: number; day?: number | null;
+    subject: string; body: string; to?: string | null;
+  }>;
 }
 
 export interface ManualLogItem {
@@ -203,7 +222,7 @@ export interface LeadScore {
 
 export interface KPI {
   label: string;
-  value: number;
+  value: number | null;   // null = no basis to compute -> rendered "—"
   delta_pct?: number | null;
   trend?: number[];
 }

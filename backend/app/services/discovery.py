@@ -277,12 +277,13 @@ def discover_local_businesses(db: Session, *, organization_id: uuid.UUID, icp: I
     from app.services.places import search_local_businesses
     from app.services.serp_filter import registrable_domain
 
-    raw: dict[str, Candidate] = {}
-    places_by_domain: dict[str, dict] = {}
-    stats = {"places_returned": 0, "after_filters": 0, "provider_error": False}
+    raw: dict[str, Candidate] = {}         # keyed by domain OR place_id (in-run dedup)
+    places_by_cand: dict[int, dict] = {}   # candidate identity -> its Places payload
+    stats = {"places_returned": 0, "after_filters": 0, "provider_error": False,
+             "no_website": 0}
     for bt in business_types:
         for loc in locations:
-            res = search_local_businesses(f"{bt} in {loc}", max_results=max_results, api_key=api_key)
+            res = search_local_businesses(f"{bt} in {loc}", max_results=max_results, api_key=api_key, db=db)
             if res.get("_provider_error"):
                 stats["provider_error"] = True
                 continue
@@ -293,16 +294,25 @@ def discover_local_businesses(db: Session, *, organization_id: uuid.UUID, icp: I
                 if (b.get("review_count") or 0) < min_reviews:
                     continue
                 web = b.get("website")
-                if not web:
-                    continue  # no website -> can't email
-                dom = registrable_domain(urlparse(web).netloc)
-                if not dom or _is_excluded(dom) or dom in raw:
+                dom = registrable_domain(urlparse(web).netloc) if web else None
+                if dom and _is_excluded(dom):
                     continue
-                raw[dom] = Candidate(
-                    title=b.get("name") or dom, url=web, domain=dom, source="places",
+                # Local businesses often have NO website (Instagram/WhatsApp-first) but a
+                # phone -> still reachable. Dedup by domain when present, else by the
+                # Google place_id (its stable identity). Drop only if we have neither.
+                pid = b.get("place_id")
+                key = dom or pid
+                if not key or key in raw:
+                    continue
+                if not dom:
+                    stats["no_website"] += 1
+                cand = Candidate(
+                    title=b.get("name") or dom or "local business", url=web or "",
+                    domain=dom, source="places",
                     snippet=(f"{bt} in {loc}. {b.get('rating')} stars, "
                              f"{b.get('review_count')} reviews. {b.get('address') or ''}"))
-                places_by_domain[dom] = b
+                raw[key] = cand
+                places_by_cand[id(cand)] = b
             if len(raw) >= max_results:
                 break
         if len(raw) >= max_results:
@@ -317,9 +327,9 @@ def discover_local_businesses(db: Session, *, organization_id: uuid.UUID, icp: I
     out: list[DiscoveredCompany] = []
     for a in accepted:
         c: Candidate = a["candidate"]
-        pd = places_by_domain.get(c.domain, {})
+        pd = places_by_cand.get(id(c), {})
         out.append(DiscoveredCompany(
-            name=a["company_name"] or c.title, domain=c.domain, website=c.url,
+            name=a["company_name"] or c.title, domain=c.domain, website=c.url or None,
             description=pd.get("address"), linkedin_url=None, source="places",
             industry=pd.get("type"), confidence=a["confidence"], ai_verified=True,
             classification_status=None, classification_label="buyer", places_data=pd))
@@ -381,7 +391,9 @@ def persist_candidates(
     icp: ICP,
     candidates: list[DiscoveredCompany],
 ) -> list[Company]:
-    """Insert new companies, ignoring duplicates by (org, domain)."""
+    """Insert new companies, ignoring duplicates by (org, domain) — or, for local
+    businesses with no website, by Google place_id (their stable identity). This lets
+    no-website med-spas (Instagram/WhatsApp-first) through; they're reached by phone."""
     out: list[Company] = []
     existing = {
         d for d, in db.execute(
@@ -391,9 +403,33 @@ def persist_candidates(
             )
         )
     }
+    # Existing place_ids (for the no-domain dedup path) so a re-discovery tomorrow
+    # doesn't duplicate a phone-only lead.
+    cand_pids = [(c.places_data or {}).get("place_id") for c in candidates]
+    cand_pids = [p for p in cand_pids if p]
+    existing_pids: set[str] = set()
+    if cand_pids:
+        existing_pids = {
+            p for (p,) in db.execute(
+                select(Company.raw["places"]["place_id"].astext).where(
+                    Company.organization_id == organization_id,
+                    Company.raw["places"]["place_id"].astext.in_(cand_pids),
+                )
+            )
+        }
+    seen_pids: set[str] = set()
     for c in candidates:
-        if not c.domain or c.domain in existing:
-            continue
+        pid = (c.places_data or {}).get("place_id")
+        if c.domain:
+            if c.domain in existing:
+                continue
+        elif pid:
+            # No website: dedup on place_id (DB + within this batch).
+            if pid in existing_pids or pid in seen_pids:
+                continue
+            seen_pids.add(pid)
+        else:
+            continue  # neither a domain nor a place_id -> nothing to dedup on, skip
         row = Company(
             organization_id=organization_id,
             project_id=icp.project_id,

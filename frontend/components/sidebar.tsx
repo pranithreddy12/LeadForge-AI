@@ -5,7 +5,7 @@ import { usePathname } from "next/navigation";
 import {
   LayoutDashboard, Sparkles, Building2, Users, Activity, Target,
   Workflow as WorkflowIcon, MessageSquare, Settings, Send, CreditCard, Crosshair,
-  ListChecks, Inbox, Sun, ClipboardList,
+  ListChecks, Inbox, Sun, ClipboardList, Database,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -15,9 +15,11 @@ const nav = [
   { href: "/icp",           label: "AI ICP",        icon: Sparkles },
   { href: "/opportunities", label: "Opportunities", icon: Crosshair },
   { href: "/leads",         label: "Leads",         icon: Building2 },
+  { href: "/data",          label: "Scraped Data",  icon: Database },
   { href: "/contacts",      label: "Contacts",      icon: Users },
   { href: "/signals",       label: "Signals",       icon: Activity },
   { href: "/replies",       label: "Replies",       icon: Inbox },
+  { href: "/pipeline",      label: "Pipeline",      icon: Send },
   { href: "/log",           label: "Outreach Log",  icon: ClipboardList },
   { href: "/crm",           label: "CRM",           icon: Target },
   { href: "/campaigns",     label: "Campaigns",     icon: Send },

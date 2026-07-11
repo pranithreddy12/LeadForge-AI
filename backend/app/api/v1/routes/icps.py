@@ -89,7 +89,8 @@ def list_icps(
     base = (
         select(ICP).join(Project, Project.id == ICP.project_id)
         .where(Project.organization_id == org.id)
-        .order_by(ICP.created_at.desc())
+        # Active ICP first — it's what the daily engine uses; never bury it mid-list.
+        .order_by(ICP.is_active.desc(), ICP.created_at.desc())
     )
     if project_id:
         base = base.where(ICP.project_id == project_id)
@@ -144,12 +145,43 @@ def refine(icp_id: uuid.UUID, instruction: str,
     return row
 
 
+@router.post("/{icp_id}/activate", response_model=ICPOut)
+def activate(icp_id: uuid.UUID, db: Session = Depends(get_db),
+             org: Organization = Depends(current_org)):
+    """Make this the org's SINGLE active ICP (deactivates all others). Discovery,
+    scoring, and drafting all read the active ICP + Settings from here on."""
+    from app.services.icp import activate_icp
+    row = db.get(ICP, icp_id)
+    if not row or row.project.organization_id != org.id:
+        raise NotFound("ICP")
+    activate_icp(db, row)
+    return row
+
+
+@router.post("/rescore-leads", status_code=202)
+def rescore_leads(db: Session = Depends(get_db),
+                  org: Organization = Depends(current_org)):
+    """Re-score EVERY lead against the currently-active ICP and re-draft its outreach.
+    Runs in the background (drafting calls the LLM per lead). Leads already sent are
+    left alone. Poll /today afterwards to see the refreshed drafts."""
+    from app.services.icp import get_active_icp
+    if get_active_icp(db, org.id) is None:
+        from app.core.errors import Conflict
+        raise Conflict("No active ICP. Activate one first, then re-score.")
+    from app.workers.outreach import rescore_and_redraft
+    task = rescore_and_redraft.delay(str(org.id))
+    return {"status": "queued", "task_id": task.id}
+
+
 @router.delete("/{icp_id}", status_code=204)
 def delete_icp(icp_id: uuid.UUID, db: Session = Depends(get_db),
                org: Organization = Depends(current_org)):
     row = db.get(ICP, icp_id)
     if not row or row.project.organization_id != org.id:
         raise NotFound("ICP")
+    if row.is_active:
+        from app.core.errors import Conflict
+        raise Conflict("Cannot delete the ACTIVE ICP. Activate another one first.")
     db.delete(row)
     db.commit()
     return None

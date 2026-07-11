@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import re
 import uuid
+from urllib.parse import urlparse
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -11,8 +13,64 @@ from app.models.company import Company
 from app.models.signal import Signal
 from app.services.scraper import fetch_static
 from app.services.search import serper_search, tavily_search
+from app.services.serp_filter import registrable_domain
 
 log = get_logger(__name__)
+
+# Business suffixes stripped before an exact company-name match.
+_BIZ_SUFFIX = re.compile(
+    r"\b(inc|llc|l\.l\.c|ltd|corp|co|pc|p\.c|pllc|dds|dmd|md|group|clinic|"
+    r"dental|dentistry|associates|partners|company|gmbh|plc)\.?\b", re.I)
+
+
+def _norm(s: str) -> str:
+    return re.sub(r"[^a-z0-9]+", " ", (s or "").lower()).strip()
+
+
+def _name_core(name: str) -> str:
+    """Distinctive core of a company name (suffixes removed, normalized)."""
+    core = _BIZ_SUFFIX.sub(" ", name or "")
+    return re.sub(r"\s+", " ", _norm(core)).strip()
+
+
+def _domain_match(company: Company, url: str | None) -> bool:
+    comp = registrable_domain(company.domain or "")
+    if not (comp and url):
+        return False
+    try:
+        sig = registrable_domain(urlparse(url).netloc)
+    except Exception:
+        return False
+    return bool(sig) and sig == comp
+
+
+def _name_in(company: Company, text: str | None) -> bool:
+    core = _name_core(company.name or "")
+    return bool(core) and len(core) >= 4 and core in _norm(text or "")
+
+
+def source_about_company(company: Company, *, title: str | None = None,
+                         snippet: str | None = None, url: str | None = None) -> bool:
+    """DETECTION-time check on the ORIGINAL article (title+snippet+url), before the LLM
+    ever sees it. Domain match OR the company name appears in the real article text."""
+    return _domain_match(company, url) or _name_in(company, f"{title or ''} {snippet or ''}")
+
+
+def signal_attribution_ok(company: Company, *, url: str | None,
+                          label: str | None = None, description: str | None = None) -> bool:
+    """HARD guard used at persist + prune. Attribution is judged ONLY on the SOURCE
+    (url/domain), NEVER the LLM-written description — because the extractor is handed the
+    company name and dutifully writes it into every description ("...practices like X"),
+    which would defeat a name match. So: the source URL is on the company's own domain,
+    OR the company's name is literally in the URL. Third-party news about a *different*
+    entity has neither and is dropped."""
+    if _domain_match(company, url):
+        return True
+    core = _name_core(company.name or "")
+    if core and len(core) >= 4 and url:
+        if core.replace(" ", "") in _norm(url).replace(" ", ""):
+            return True
+    return False
 
 # Heuristic source URLs we try per company.
 def _candidate_career_urls(domain: str) -> list[str]:
@@ -51,6 +109,10 @@ def detect_for_company(db: Session, company: Company, icp_keywords: list[str]) -
     # ---- 2. Funding / news (Serper News + Tavily) ---------------------------
     name = company.name
     news_results = serper_search(f"{name} funding OR raises OR Series", max_results=5, kind="news")
+    # Attribution pre-filter: only keep articles actually about THIS company (domain or
+    # name in the real title/snippet) before the LLM extracts — no misattribution.
+    news_results = [n for n in news_results if source_about_company(
+        company, title=n.get("title"), snippet=n.get("snippet"), url=n.get("link"))]
     news_text = "\n\n".join(
         f"{n.get('title')}\n{n.get('snippet')}\nURL: {n.get('link')}\nDate: {n.get('date', '')}"
         for n in news_results
@@ -65,6 +127,8 @@ def detect_for_company(db: Session, company: Company, icp_keywords: list[str]) -
             found.append(s)
 
     tav = tavily_search(f"{name} product launch OR hiring OR funding 2026", max_results=5)
+    tav = [t for t in tav if source_about_company(
+        company, title=t.get("title"), snippet=t.get("content"), url=t.get("url"))]
     tav_text = "\n\n".join(
         f"{t.get('title')}\n{t.get('content')[:500]}\nURL: {t.get('url')}"
         for t in tav
@@ -126,6 +190,20 @@ def _coerce_observed_at(val):
 def _persist_signals(db: Session, company: Company, found: list[dict]) -> list[Signal]:
     if not found:
         return []
+    # ATTRIBUTION GUARD: a signal may only be kept if its source is actually about THIS
+    # company (domain or exact-name match). Drops competitor-funding / unrelated-school
+    # articles that the news search swept in. This is the fix for misattributed signals.
+    kept = []
+    for s in found:
+        if signal_attribution_ok(company, url=s.get("url"), label=s.get("label"),
+                                 description=s.get("description")):
+            kept.append(s)
+        else:
+            log.info("signal_dropped_misattributed", company=company.name,
+                     label=(s.get("label") or "")[:80], url=s.get("url"))
+    found = kept
+    if not found:
+        return []
     # Defense in depth: if a REAL LLM provider is configured, never persist a
     # demo-sourced signal. Demo signals only legitimately exist in zero-key mode.
     from app.ai.openai_client import current_provider
@@ -169,6 +247,32 @@ def _persist_signals(db: Session, company: Company, found: list[dict]) -> list[S
     for row in out:
         db.refresh(row)
     return out
+
+
+def prune_misattributed_signals(db: Session, organization_id: uuid.UUID) -> dict:
+    """One-time cleanup: re-validate every existing signal against its company and
+    delete the ones that fail attribution (source not about that company). Local
+    review signals (google_reviews) + discovery-extract are inherently self-attributed
+    and are left alone."""
+    rows = db.execute(
+        select(Signal, Company).join(Company, Company.id == Signal.company_id)
+        .where(Signal.organization_id == organization_id)
+    ).all()
+    dropped = kept = 0
+    for sig, company in rows:
+        if (sig.source or "") in ("google_reviews", "discovery_extract", "seed",
+                                  "website_scan"):
+            kept += 1
+            continue
+        if signal_attribution_ok(company, url=sig.url, label=sig.label,
+                                 description=sig.description):
+            kept += 1
+        else:
+            db.delete(sig)
+            dropped += 1
+    db.commit()
+    log.info("prune_misattributed_signals", dropped=dropped, kept=kept)
+    return {"dropped": dropped, "kept": kept}
 
 
 def list_signals(db: Session, *, company_id: uuid.UUID, limit: int = 50) -> list[Signal]:

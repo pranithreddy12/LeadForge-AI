@@ -39,6 +39,8 @@ type SettingsData = {
   outreach_mode: string[];
   outreach_tone: "professional" | "friendly" | "direct";
   outreach_send_mode: "manual" | "automated";
+  booking_link: string | null;
+  draft_language: "en" | "en+ar";
   max_emails_per_day: number;
   max_emails_per_run: number;
   contact_find_hunter: boolean;
@@ -127,7 +129,7 @@ const EMPTY: SettingsData = {
   discovery_mode: "b2b", target_business_types: [], target_locations: [],
   search_radius_miles: 25, min_reviews: 10, max_results_per_run: 20,
   icp_name: "", employee_min: null, employee_max: null, target_industries: [], target_geography: [],
-  outreach_mode: ["email"], outreach_tone: "professional", outreach_send_mode: "manual", max_emails_per_day: 50, max_emails_per_run: 25,
+  outreach_mode: ["email"], outreach_tone: "professional", outreach_send_mode: "manual", booking_link: "", draft_language: "en", max_emails_per_day: 50, max_emails_per_run: 25,
   contact_find_hunter: true, contact_find_scrape: true, contact_find_linkedin: true, validate_emails: true,
   filter_min_score: 65, filter_enforce_icp_size: true,
   whatsapp_webhook_url: "",
@@ -175,7 +177,8 @@ export default function SettingsPage() {
       icp_name: f.icp_name, employee_min: f.employee_min, employee_max: f.employee_max,
       target_industries: f.target_industries, target_geography: f.target_geography,
       outreach_mode: f.outreach_mode, outreach_tone: f.outreach_tone,
-      outreach_send_mode: f.outreach_send_mode,
+      outreach_send_mode: f.outreach_send_mode, booking_link: f.booking_link ?? "",
+      draft_language: f.draft_language,
       max_emails_per_day: f.max_emails_per_day, max_emails_per_run: f.max_emails_per_run,
       contact_find_hunter: f.contact_find_hunter, contact_find_scrape: f.contact_find_scrape,
       contact_find_linkedin: f.contact_find_linkedin, validate_emails: f.validate_emails,
@@ -309,7 +312,17 @@ export default function SettingsPage() {
                   <p className="mt-2 text-xs text-amber-500">Automated mode sends real emails/WhatsApp without review. Keep Manual until you trust the drafts.</p>
                 )}
               </Field>
+              <Field label="Booking link" hint="Calendly/Cal.com/etc. Injected into every draft's CTA. If empty, drafts ask for a reply instead — never a 'book a slot' with no link.">
+                <Input value={f.booking_link ?? ""} onChange={(e) => set({ booking_link: e.target.value })} placeholder="https://cal.com/you/15min (optional)" />
+              </Field>
               <Separator />
+              <Field label="Draft language" hint="English + Arabic adds a natural Arabic version of the WhatsApp/DM message to every draft (UAE/GCC: Arabic-first owners reply more).">
+                <div className="flex gap-2">
+                  {([["en", "English only"], ["en+ar", "English + Arabic DM"]] as const).map(([v, label]) => (
+                    <Button key={v} variant={f.draft_language === v ? "default" : "outline"} onClick={() => set({ draft_language: v })}>{label}</Button>
+                  ))}
+                </div>
+              </Field>
               <Field label="Tone">
                 <div className="flex gap-2">
                   {(["professional", "friendly", "direct"] as const).map((t) => (
@@ -324,6 +337,8 @@ export default function SettingsPage() {
               <p className="text-xs text-muted-foreground">Note: only Email is sent automatically. SMS / call-script outputs are drafts to copy and use manually.</p>
             </CardContent>
           </Card>
+
+          <DeliverabilityCard />
 
           <Card>
             <CardHeader>
@@ -406,5 +421,66 @@ export default function SettingsPage() {
         </TabsContent>
       </Tabs>
     </div>
+  );
+}
+
+type AuthCheck = {
+  domain: string;
+  spf: { found: boolean; record: string | null };
+  dmarc: { found: boolean; policy: string | null; record: string | null };
+  dkim: { found: boolean; selector: string | null };
+  mx: boolean | null;
+  verdict: "pass" | "partial" | "fail" | "unknown";
+  notes: string[];
+};
+
+function DeliverabilityCard() {
+  const [domain, setDomain] = useState("");
+  const check = useMutation({
+    mutationFn: () =>
+      api.get<AuthCheck>(`/settings/deliverability${domain.trim() ? `?domain=${encodeURIComponent(domain.trim())}` : ""}`),
+    onError: (e: any) => toast.error(e.message || "Check failed"),
+  });
+  const r = check.data;
+  const chip = (ok: boolean | null | undefined, label: string, extra?: string | null) => (
+    <Badge variant={ok === true ? "success" : ok === false ? "danger" : "default"}>
+      {label}{ok === true ? " ✓" : ok === false ? " ✗" : " ?"}{extra ? ` (${extra})` : ""}
+    </Badge>
+  );
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Email deliverability preflight</CardTitle>
+        <CardDescription>
+          SPF / DKIM / DMARC / MX check of your sending domain — Gmail &amp; Yahoo hard-enforce
+          these for bulk senders (since Nov 2025). Leave blank to check your configured Gmail address.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <div className="flex gap-2 max-w-md">
+          <Input value={domain} onChange={(e) => setDomain(e.target.value)}
+                 placeholder="yourdomain.com (optional)" />
+          <Button onClick={() => check.mutate()} disabled={check.isPending}>
+            {check.isPending ? "Checking…" : "Check"}
+          </Button>
+        </div>
+        {r && (
+          <div className="space-y-2">
+            <div className="flex flex-wrap items-center gap-2">
+              <Badge variant={r.verdict === "pass" ? "success" : r.verdict === "partial" ? "warn" : "danger"}>
+                {r.domain}: {r.verdict.toUpperCase()}
+              </Badge>
+              {chip(r.spf.found, "SPF")}
+              {chip(r.dkim.found, "DKIM", r.dkim.selector)}
+              {chip(r.dmarc.found, "DMARC", r.dmarc.policy)}
+              {chip(r.mx, "MX")}
+            </div>
+            {r.notes.map((n, i) => (
+              <p key={i} className="text-xs text-muted-foreground">• {n}</p>
+            ))}
+          </div>
+        )}
+      </CardContent>
+    </Card>
   );
 }

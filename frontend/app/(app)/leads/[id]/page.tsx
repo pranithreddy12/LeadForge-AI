@@ -172,12 +172,14 @@ export default function LeadDetailPage() {
         </Card>
       </div>
 
+      {/* Contact channels + saved outreach draft — always visible, mirrors /today */}
+      <OutreachPanel companyId={c.id} />
+
       <Tabs defaultValue="research">
         <TabsList>
           <TabsTrigger value="research">Research</TabsTrigger>
           <TabsTrigger value="signals">Signals ({signals.data?.total ?? 0})</TabsTrigger>
           <TabsTrigger value="contacts">Contacts ({contacts.data?.total ?? 0})</TabsTrigger>
-          <TabsTrigger value="outreach">Outreach</TabsTrigger>
         </TabsList>
 
         <TabsContent value="research">
@@ -255,10 +257,6 @@ export default function LeadDetailPage() {
               )}
             </CardContent>
           </Card>
-        </TabsContent>
-
-        <TabsContent value="outreach">
-          <OutreachPanel companyId={c.id} />
         </TabsContent>
       </Tabs>
     </div>
@@ -411,40 +409,139 @@ function ResearchList({ icon: Icon, title, items, tone }: {
 }
 
 
+type LeadCard = {
+  draft_id: string | null;
+  draft_status: string | null;   // 'draft' | 'sent'
+  score: number | null; grade: string | null;
+  signal: string | null;
+  subject: string | null; body: string | null;
+  to: string | null; decision_maker: string | null;
+  phone: string | null; wa_link: string | null;
+  email_mx_ok: boolean | null; spam_flags: string[];
+  dm: string | null;
+  dm_ar: string | null;
+  auto_reply_comeback: string | null;
+  socials: Record<string, string>;
+};
+
+function copy(text: string, label: string) {
+  navigator.clipboard.writeText(text).then(() => toast.success(`${label} copied`));
+}
+
 function OutreachPanel({ companyId }: { companyId: string }) {
-  type V = { subject: string; body: string };
-  const m = useMutation({
-    mutationFn: () => api.post<{ variants: V[] }>(`/campaigns/outreach`, {
-      company_id: companyId, channel: "email", tone: "concise", follow_up: 0,
-    }),
-    onError: (e: any) => toast.error(e.message),
+  const qc = useQueryClient();
+  const card = useQuery({
+    queryKey: ["lead-card", companyId],
+    queryFn: () => api.get<LeadCard>(`/today/company/${companyId}`),
+  });
+  const redraft = useMutation({
+    mutationFn: () => api.post<LeadCard>(`/today/company/${companyId}/draft`),
+    onSuccess: () => { toast.success("Draft regenerated"); qc.invalidateQueries({ queryKey: ["lead-card", companyId] }); },
+    onError: (e: any) => toast.error(e.message || "Could not draft"),
   });
 
+  const d = card.data;
+  const hasDraft = !!(d && d.body);
+
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="flex items-center justify-between">
-          AI outreach drafts
-          <Button size="sm" variant="glow" onClick={() => m.mutate()} disabled={m.isPending}>
-            {m.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
-            Generate
-          </Button>
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-4">
-        {!m.data && !m.isPending && (
-          <div className="text-sm text-muted-foreground flex items-center gap-2"><MessageSquare className="h-4 w-4" />
-            Generate two AI-personalized email drafts grounded in detected signals.
+    <div className="space-y-4">
+      {/* Channels — the same reach info the Today card shows */}
+      <Card>
+        <CardHeader className="pb-3"><CardTitle className="text-sm">Contact channels</CardTitle></CardHeader>
+        <CardContent className="space-y-3 text-sm">
+          {d?.signal && (
+            <div className="text-xs"><span className="text-muted-foreground">Why it qualified: </span>
+              <span className="font-medium text-brand-300">{d.signal}</span></div>
+          )}
+          <div className="flex flex-wrap gap-2">
+            {d?.phone && <Badge variant="outline">☎ {d.phone}</Badge>}
+            {d?.wa_link && <a href={d.wa_link} target="_blank" rel="noreferrer">
+              <Badge variant="success">WhatsApp ↗</Badge></a>}
+            {d?.decision_maker && <Badge variant="brand">{d.decision_maker}</Badge>}
+            {d && Object.entries(d.socials || {}).map(([k, url]) => (
+              <a key={k} href={url} target="_blank" rel="noreferrer">
+                <Badge variant="info">{k} ↗</Badge></a>
+            ))}
+            {d && !d.phone && !d.wa_link && Object.keys(d.socials || {}).length === 0 && (
+              <span className="text-muted-foreground text-xs">No channels found — run Find contacts / Enrich.</span>
+            )}
           </div>
-        )}
-        {m.data?.variants?.map((v, i) => (
-          <div key={i} className="rounded-lg border border-white/5 bg-white/[0.02] p-4">
-            <div className="text-xs text-muted-foreground mb-1">Variant {i + 1} — Subject</div>
-            <div className="font-medium mb-3">{v.subject}</div>
-            <div className="text-sm whitespace-pre-wrap leading-relaxed">{v.body}</div>
-          </div>
-        ))}
-      </CardContent>
-    </Card>
+        </CardContent>
+      </Card>
+
+      {/* Saved outreach draft (parity with /today) */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center justify-between">
+            <span className="flex items-center gap-2">
+              {d?.draft_status === "sent" ? "Sent message" : "Outreach draft"}
+              {d?.draft_status === "sent" && <Badge variant="success">Sent ✓</Badge>}
+            </span>
+            <Button size="sm" variant={hasDraft ? "outline" : "glow"}
+                    onClick={() => redraft.mutate()} disabled={redraft.isPending}
+                    title={d?.draft_status === "sent" ? "Generate a fresh draft (e.g. a follow-up) — your sent copy is kept" : undefined}>
+              {redraft.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
+              {d?.draft_status === "sent" ? "New draft" : hasDraft ? "Re-draft" : "Generate draft"}
+            </Button>
+          </CardTitle>
+          {hasDraft && (
+            <CardDescription className="flex flex-wrap items-center gap-2">
+              <span>To: {d!.to || <span className="text-amber-400">no email found</span>}</span>
+              {d!.to && d!.email_mx_ok === false && <Badge variant="danger">MX fail</Badge>}
+              {d!.spam_flags?.length > 0 && <Badge variant="warn">spam: {d!.spam_flags.join(", ")}</Badge>}
+            </CardDescription>
+          )}
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {card.isLoading && <div className="text-sm text-muted-foreground flex items-center gap-2">
+            <Loader2 className="h-4 w-4 animate-spin" /> Loading draft…</div>}
+          {!card.isLoading && !hasDraft && (
+            <div className="text-sm text-muted-foreground flex items-center gap-2"><MessageSquare className="h-4 w-4" />
+              No saved draft yet — click <em>Generate draft</em> (uses the same engine as the daily run).
+            </div>
+          )}
+          {hasDraft && (
+            <div className="rounded-lg border border-white/5 bg-white/[0.02] p-4 space-y-3">
+              <div className="flex items-center justify-between gap-2">
+                <div className="text-xs text-muted-foreground">Subject</div>
+                <div className="flex gap-1">
+                  <Button size="sm" variant="ghost" onClick={() => copy(d!.subject || "", "Subject")}>Copy subject</Button>
+                  <Button size="sm" variant="ghost" onClick={() => copy(d!.body || "", "Body")}>Copy body</Button>
+                </div>
+              </div>
+              <div className="font-medium">{d!.subject}</div>
+              <div className="text-sm whitespace-pre-wrap leading-relaxed border-t border-white/5 pt-3">{d!.body}</div>
+            </div>
+          )}
+          {d?.dm && (
+            <div className="rounded-lg border border-emerald-500/20 bg-emerald-500/5 p-4 space-y-2">
+              <div className="flex items-center justify-between">
+                <div className="text-[11px] uppercase tracking-wider text-emerald-300">WhatsApp / DM variant</div>
+                <Button size="sm" variant="ghost" onClick={() => copy(d.dm || "", "DM")}>Copy DM</Button>
+              </div>
+              <div className="text-sm whitespace-pre-wrap leading-relaxed">{d.dm}</div>
+            </div>
+          )}
+          {d?.dm_ar && (
+            <div className="rounded-lg border border-sky-500/20 bg-sky-500/5 p-4 space-y-2">
+              <div className="flex items-center justify-between">
+                <div className="text-[11px] uppercase tracking-wider text-sky-300">Arabic DM (العربية)</div>
+                <Button size="sm" variant="ghost" onClick={() => copy(d.dm_ar || "", "Arabic DM")}>Copy</Button>
+              </div>
+              <div className="text-sm whitespace-pre-wrap leading-relaxed" dir="rtl" lang="ar">{d.dm_ar}</div>
+            </div>
+          )}
+          {d?.auto_reply_comeback && (
+            <div className="rounded-lg border border-amber-500/20 bg-amber-500/5 p-4 space-y-2">
+              <div className="flex items-center justify-between">
+                <div className="text-[11px] uppercase tracking-wider text-amber-300">If they auto-reply — send this back</div>
+                <Button size="sm" variant="ghost" onClick={() => copy(d.auto_reply_comeback || "", "Comeback")}>Copy</Button>
+              </div>
+              <div className="text-sm whitespace-pre-wrap leading-relaxed">{d.auto_reply_comeback}</div>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+    </div>
   );
 }

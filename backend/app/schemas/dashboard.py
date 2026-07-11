@@ -5,7 +5,9 @@ from pydantic import BaseModel
 
 class KPI(BaseModel):
     label: str
-    value: int | float
+    # None = "we have no basis to compute this" (rendered as "—"), which is honest.
+    # A confident 0 would read as a real zero (e.g. "$0 pipeline") when it isn't.
+    value: int | float | None
     delta_pct: float | None = None
     trend: list[float] = []
 
