@@ -115,38 +115,60 @@ def discover_contacts_for_company(db: Session, company: Company) -> list[Contact
             company, name=f"{company.name} (main line)", title="Owner/Manager",
             phone=phone, personas=personas, is_primary=True))
 
-    # ---- 3. Email: Hunter FIRST, website-scrape FALLBACK (both Settings-gated) ----
+    # ---- 3. Email WATERFALL: every configured source runs, results merge, then rank.
+    # Previously Hunter and scraping were either/or (elif), so one weak Hunter hit
+    # blocked scraping entirely. A waterfall runs both, dedupes, and ranks by QUALITY
+    # so a named person's address always beats a generic info@ as the recipient.
     if company.domain:
-        key = resolve_credential(db, company.organization_id, "hunter_api_key")
-        from app.services import hunter
-        hits = (hunter.find_email(company.domain, company.name, api_key=key or None)
-                if cfg["contact_find_hunter"] else [])
-        if hits:
-            for i, h in enumerate(hits):
-                fn, ln = (h.get("first_name") or ""), (h.get("last_name") or "")
-                name = (fn + " " + ln).strip() or h["email"]
-                new_contacts.append(_make_contact(
-                    company, name=name, title=h.get("position") or "Decision maker",
-                    email=h["email"], email_confidence=h["confidence"],
-                    personas=personas,
-                    # The single highest-confidence email is the primary contact in
-                    # B2B mode (in local mode the phone already claimed primary).
-                    is_primary=(i == 0 and not places_phone)))
-            log.info("contacts_source", company=str(company.id), source="hunter",
-                     n=len(hits), top_confidence=hits[0]["confidence"])
-        elif cfg["contact_find_scrape"]:
+        found: dict[str, dict] = {}   # email -> {name, title, confidence, source}
+
+        def _offer(email: str | None, *, name: str, title: str,
+                   confidence: int | None, source: str) -> None:
+            if not email:
+                return
+            e = email.strip().lower()
+            prev = found.get(e)
+            # keep the richest record for a duplicate address
+            if prev is None or (confidence or 0) > (prev.get("confidence") or 0):
+                found[e] = {"name": name, "title": title,
+                            "confidence": confidence, "source": source}
+
+        # tier 1 — Hunter domain search (named people + positions when it has them)
+        if cfg["contact_find_hunter"]:
+            key = resolve_credential(db, company.organization_id, "hunter_api_key")
+            from app.services import hunter
+            for h in hunter.find_email(company.domain, company.name, api_key=key or None):
+                nm = ((h.get("first_name") or "") + " " + (h.get("last_name") or "")).strip()
+                _offer(h.get("email"), name=nm or h["email"],
+                       title=h.get("position") or "Decision maker",
+                       confidence=h.get("confidence"), source="hunter")
+
+        # tier 2 — the company's own website (free, and often the only source that works
+        # for local SMBs). Runs even when Hunter returned something.
+        if cfg["contact_find_scrape"]:
             from app.services.scraper import scrape_emails_for_domain
-            scraped = scrape_emails_for_domain(company.domain)
-            for j, addr in enumerate(scraped):
+            for addr in scrape_emails_for_domain(company.domain):
                 local = addr.split("@")[0]
-                title = "Sales" if local in ("sales", "hello", "info", "contact") else "Contact"
-                new_contacts.append(_make_contact(
-                    company, name=f"{company.name} ({local}@)", title=title,
-                    email=addr, personas=personas,
-                    is_primary=(j == 0 and not places_phone)))
-            log.info("contacts_source", company=str(company.id),
-                     source="scraped", n=len(scraped),
-                     hunter_empty=True)
+                _offer(addr, name=f"{company.name} ({local}@)",
+                       title="Sales" if local in ("sales", "hello", "info", "contact") else "Contact",
+                       confidence=None, source="scraped")
+
+        # rank: a real person's mailbox outranks a shared front desk, and a verified
+        # address outranks an unverified one. The top of this list becomes the primary
+        # contact -> the draft's recipient.
+        ranked = sorted(
+            found.items(),
+            key=lambda kv: (_email_quality(kv[0]), kv[1].get("confidence") or 0),
+            reverse=True)
+        for i, (addr, info) in enumerate(ranked):
+            new_contacts.append(_make_contact(
+                company, name=info["name"], title=info["title"], email=addr,
+                email_confidence=info.get("confidence"), personas=personas,
+                is_primary=(i == 0 and not places_phone)))
+        if ranked:
+            log.info("contacts_waterfall", company=str(company.id), n=len(ranked),
+                     sources=sorted({v["source"] for _, v in ranked}),
+                     best=ranked[0][0], best_quality=_email_quality(ranked[0][0]))
 
     # ---- 4. Decision-maker names (Dr./owner) from About/Team pages -----------
     if company.domain and cfg["contact_find_scrape"]:
@@ -174,7 +196,85 @@ def discover_contacts_for_company(db: Session, company: Company) -> list[Contact
                      platforms=list(socials.keys()))
 
     persisted = _persist(db, company, new_contacts)
+
+    # ---- 6. Waterfall's LAST tier: turn the owner's NAME into their own mailbox.
+    # Runs only when we still have no person-level address (i.e. every email we found
+    # is a front desk) — that's the whole info@ problem. Persists nothing unless the
+    # address is verified, so a guess can never bounce.
+    if company.domain and cfg["contact_find_scrape"]:
+        best = max((_email_quality(c.email) for c in persisted if c.email), default=0)
+        if best < 2:
+            try:
+                from app.services.owner_email import find_owner_email
+                res = find_owner_email(db, company)
+                if res.get("found"):
+                    log.info("owner_email_waterfall", company=str(company.id),
+                             method=res.get("method"))
+                    persisted = db.execute(
+                        select(Contact).where(Contact.company_id == company.id)
+                    ).scalars().all()
+            except Exception as e:
+                log.info("owner_email_skipped", error=str(e)[:120])
     return persisted
+
+
+_GENERIC_MAILBOXES = (
+    "info", "contact", "contactus", "hello", "hi", "admin", "office", "reception",
+    "enquiry", "enquiries", "inquiry", "inquiries", "support", "customersupport",
+    "help", "book", "booking", "bookings", "appointment", "appointments",
+    "reservations", "reservation", "sales", "mail", "email", "welcome", "care",
+    "wecare", "team", "clinic", "spa", "general", "frontdesk", "desk", "billing",
+    "accounts", "finance", "marketing", "press", "media", "partnership",
+    "partnerships", "feedback", "complaints", "orders", "shop", "store",
+    # role / industry words that read like a name but are a shared inbox
+    "leads", "lead", "aesthetic", "aesthetics", "wellness", "medical", "health",
+    "healthcare", "beauty", "skin", "laser", "derma", "dermatology", "dental",
+    "doctor", "doctors", "reception1", "frontoffice", "crm", "newpatients",
+)
+# BRANCH / LOCATION aliases (dubai@, jumeirah@, marina@). These read like a person's
+# given name to a naive check but are a site inbox — pitching them lands at a branch
+# front desk, not the owner. Multi-branch clinics use these constantly.
+_LOCATION_MAILBOXES = (
+    "dubai", "abudhabi", "abu", "sharjah", "ajman", "fujairah", "rak",
+    "rasalkhaimah", "ummalquwain", "uae", "emirates", "jumeirah", "marina",
+    "downtown", "deira", "burdubai", "difc", "jbr", "albarsha", "barsha",
+    "motorcity", "silicon", "mirdif", "karama", "satwa", "tecom", "jlt",
+    "branch", "hq", "head", "headoffice", "main", "city", "mall", "riyadh",
+    "doha", "london", "india", "usa",
+)
+
+
+def _email_quality(email: str) -> int:
+    """Rank an address by how likely it reaches a DECISION-MAKER.
+
+      2 = a person's mailbox (sarah@, a.ullah@)  -> the one worth pitching
+      1 = unknown shape                          -> maybe a person
+      0 = a shared front desk (info@, bookings@) -> a receptionist reads this
+
+    Local businesses publish info@ and hide the owner, so without this ranking the
+    draft's recipient is whatever source answered first — usually the front desk.
+    """
+    local = (email or "").split("@")[0].lower()
+    if not local:
+        return 0
+    base = re.split(r"[.\-_+]", local)[0]
+    if local in _GENERIC_MAILBOXES or base in _GENERIC_MAILBOXES:
+        return 0
+    # A branch/location alias (dubai@, jumeirah@) is a site inbox, not a person —
+    # even though it looks like a given name.
+    if local in _LOCATION_MAILBOXES or base in _LOCATION_MAILBOXES:
+        return 0
+    # A mailbox that echoes the BRAND is an alias, not a person:
+    # healthcallclinic@healthcall.ae, jumeirahone@jumeirah.com. General rule — no
+    # word list can keep up with every brand, but the domain always names the brand.
+    domain_root = (email or "").split("@")[-1].split(".")[0].lower()
+    a, b = re.sub(r"[^a-z]", "", local), re.sub(r"[^a-z]", "", domain_root)
+    if a and b and len(b) >= 4 and (a in b or b in a):
+        return 0
+    # first.last / f.last / a person's given name reads as an individual
+    if re.fullmatch(r"[a-z]+([._-][a-z]+)+", local) or re.fullmatch(r"[a-z]{3,}", local):
+        return 2
+    return 1
 
 
 def _make_contact(company: Company, *, name: str, title: str,

@@ -116,6 +116,15 @@ def update_settings(payload: SettingsUpdate, db: Session = Depends(get_db),
     return _serialize(s)
 
 
+@router.get("/sending-health")
+def sending_health_check(db: Session = Depends(get_db),
+                         org: Organization = Depends(current_org)):
+    """Bounce rate, today's volume vs cap, and account risk — the two numbers that
+    actually predict a suspension, measured from real send outcomes."""
+    from app.services.sending_health import sending_health
+    return sending_health(db, org.id)
+
+
 @router.get("/deliverability")
 def deliverability_check(domain: str | None = None,
                          db: Session = Depends(get_db),

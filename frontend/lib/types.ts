@@ -107,7 +107,11 @@ export interface TodayLead {
   dm?: string | null;
   dm_ar?: string | null;
   auto_reply_comeback?: string | null;
+  edited?: boolean;
   wa_link?: string | null;
+  ig_handle?: string | null;
+  ig_dm_link?: string | null;
+  ig_profile?: string | null;
   socials?: Record<string, string>;
 }
 

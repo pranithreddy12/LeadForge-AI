@@ -3,8 +3,8 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  Ban, Check, Clock, Copy, Facebook, Instagram, Linkedin, Loader2, MessageCircle, Music2,
-  RefreshCw, Send, SkipForward, Youtube,
+  Activity, Ban, Check, Clock, Copy, Facebook, Instagram, Linkedin, Loader2,
+  MessageCircle, Music2, Pencil, PlayCircle, RefreshCw, Send, SkipForward, UserSearch, Youtube,
 } from "lucide-react";
 import { toast } from "sonner";
 import Link from "next/link";
@@ -21,6 +21,15 @@ const SKIP_REASONS = [
   ["looks_wrong", "Looks wrong"],
   ["other", "Other"],
 ] as const;
+
+/** Copy silently — used when opening an IG DM so the message is already on the
+ *  clipboard when the chat window appears (Instagram can't be pre-filled by URL). */
+function copyText(text: string) {
+  navigator.clipboard.writeText(text).then(
+    () => toast.success("DM copied — paste it in the chat"),
+    () => toast.error("Couldn't copy — copy the DM manually"),
+  );
+}
 
 function CopyBtn({ text, label }: { text: string; label: string }) {
   const [done, setDone] = useState(false);
@@ -68,7 +77,40 @@ function SocialPills({ socials }: { socials?: Record<string, string> }) {
 function LeadCard({ lead }: { lead: TodayLead }) {
   const qc = useQueryClient();
   const [skipOpen, setSkipOpen] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [subj, setSubj] = useState(lead.subject);
+  const [body, setBody] = useState(lead.body);
+  const dirty = subj !== lead.subject || body !== lead.body;
   const invalidate = () => qc.invalidateQueries({ queryKey: ["today"] });
+
+  const saveEdit = useMutation({
+    mutationFn: () => api.patch(`/today/${lead.company_id}/draft`, { subject: subj, body }),
+    onSuccess: () => { toast.success("Draft saved"); setEditing(false); invalidate(); },
+    onError: (e: any) => toast.error(e?.message || "Couldn't save"),
+  });
+  const demo = useMutation({
+    mutationFn: () => api.get<{ html: string }>(`/today/${lead.company_id}/demo`),
+    onSuccess: (d: any) => {
+      // Open the generated demo page in a new tab (blob) — screenshot it into WhatsApp/IG.
+      const url = URL.createObjectURL(new Blob([d.html], { type: "text/html" }));
+      window.open(url, "_blank", "noopener,noreferrer");
+      setTimeout(() => URL.revokeObjectURL(url), 60000);
+    },
+    onError: (e: any) => toast.error(e?.message || "Couldn't build demo"),
+  });
+  const sentVia = useMutation({
+    mutationFn: (channel: string) => api.post(`/today/${lead.company_id}/sent-via`, { channel }),
+    onSuccess: (_d: any, channel: string) => { toast.success(`Logged — ${channel} outreach sent`); invalidate(); },
+    onError: (e: any) => toast.error(e?.message || "Couldn't log"),
+  });
+  const findOwner = useMutation({
+    mutationFn: () => api.post<{ found: boolean; email?: string; detail?: string }>(`/today/${lead.company_id}/find-owner-email`),
+    onSuccess: (d: any) => {
+      if (d.found) { toast.success(`Found owner email: ${d.email}`); invalidate(); }
+      else toast(d.detail || "No owner email found", { icon: "ℹ️" });
+    },
+    onError: (e: any) => toast.error(e?.message || "Lookup failed"),
+  });
 
   const sent = useMutation({
     mutationFn: () => api.post(`/today/${lead.company_id}/sent`),
@@ -86,7 +128,11 @@ function LeadCard({ lead }: { lead: TodayLead }) {
     onError: (e: any) => toast.error(e?.message || "Failed"),
   });
   const sendEmail = useMutation({
-    mutationFn: () => api.post<{ sent: boolean; to?: string; reason?: string; detail?: string }>(`/today/${lead.company_id}/send-email`),
+    // Persist any pending edits first so we always send exactly what's on screen.
+    mutationFn: async () => {
+      if (dirty) await api.patch(`/today/${lead.company_id}/draft`, { subject: subj, body });
+      return api.post<{ sent: boolean; to?: string; reason?: string; detail?: string }>(`/today/${lead.company_id}/send-email`);
+    },
     onSuccess: (d: any) => {
       if (d.sent) { toast.success(`Sent to ${d.to}`); invalidate(); }
       else toast.error(d.detail || d.reason || "Could not send");
@@ -148,16 +194,83 @@ function LeadCard({ lead }: { lead: TodayLead }) {
         )}
 
         <div className="rounded-md border border-white/5 bg-card/40 p-3 space-y-2">
-          <div className="text-[11px] uppercase tracking-wide text-muted-foreground">Drafted email</div>
-          <div className="text-sm"><span className="text-muted-foreground">To:</span> {lead.to || <span className="text-amber-500">no email found</span>}</div>
-          <div className="text-sm"><span className="text-muted-foreground">Subject:</span> {lead.subject}</div>
-          <p className="text-sm whitespace-pre-wrap pt-1 border-t border-white/5">{lead.body}</p>
+          <div className="flex items-center justify-between">
+            <div className="text-[11px] uppercase tracking-wide text-muted-foreground">Drafted email {(lead as any).edited && <span className="text-brand-300">· edited</span>}</div>
+            {!editing ? (
+              <button onClick={() => { setSubj(lead.subject); setBody(lead.body); setEditing(true); }}
+                      className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground">
+                <Pencil className="h-3 w-3" /> Edit
+              </button>
+            ) : (
+              <div className="flex items-center gap-1">
+                <Button size="sm" variant="ghost" onClick={() => { setEditing(false); setSubj(lead.subject); setBody(lead.body); }}>Cancel</Button>
+                <Button size="sm" variant="default" disabled={!dirty || saveEdit.isPending} onClick={() => saveEdit.mutate()}>
+                  {saveEdit.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : "Save"}
+                </Button>
+              </div>
+            )}
+          </div>
+          <div className="flex items-center justify-between gap-2">
+            <div className="text-sm">
+              <span className="text-muted-foreground">To:</span> {lead.to || <span className="text-amber-500">no email found</span>}
+              {lead.to && /^(info|contact|hello|admin|reception|book|appointment|enquiry|enquiries|support|office|reservations|customersupport|wecare)@/i.test(lead.to) && (
+                <span className="ml-1.5 text-[11px] text-amber-500">· front-desk inbox</span>
+              )}
+            </div>
+            {lead.domain && (!lead.to || /^(info|contact|hello|admin|reception|book|appointment|enquiry|enquiries|support|office|reservations|customersupport|wecare)@/i.test(lead.to || "")) && (
+              <button onClick={() => findOwner.mutate()} disabled={findOwner.isPending}
+                      title="Look up the owner's personal email from their name (verified — never a guess)"
+                      className="inline-flex items-center gap-1 whitespace-nowrap text-xs text-brand-300 hover:text-brand-200">
+                {findOwner.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <UserSearch className="h-3 w-3" />} Find owner email
+              </button>
+            )}
+          </div>
+          {!editing ? (
+            <>
+              <div className="text-sm"><span className="text-muted-foreground">Subject:</span> {lead.subject}</div>
+              <p className="text-sm whitespace-pre-wrap pt-1 border-t border-white/5">{lead.body}</p>
+            </>
+          ) : (
+            <div className="space-y-2 pt-1">
+              <input value={subj} onChange={(e) => setSubj(e.target.value)} placeholder="Subject"
+                     className="w-full rounded-md border border-white/10 bg-background px-2.5 py-1.5 text-sm outline-none focus:border-brand-400" />
+              <textarea value={body} onChange={(e) => setBody(e.target.value)} rows={7}
+                        className="w-full resize-y rounded-md border border-white/10 bg-background px-2.5 py-2 text-sm leading-relaxed outline-none focus:border-brand-400" />
+              <p className="text-[11px] text-muted-foreground">Edits are saved to this draft. “Send email” always sends your latest version.</p>
+            </div>
+          )}
         </div>
 
         {lead.dm && (
           <div className="rounded-md border border-emerald-500/20 bg-emerald-500/[0.06] p-3 space-y-1">
             <div className="text-[11px] uppercase tracking-wide text-emerald-300">WhatsApp / DM variant</div>
             <p className="text-sm whitespace-pre-wrap">{lead.dm}</p>
+          </div>
+        )}
+
+        {lead.ig_dm_link && (
+          <div className="rounded-md border border-fuchsia-500/20 bg-fuchsia-500/[0.06] p-3 space-y-2">
+            <div className="flex items-center justify-between gap-2">
+              <div className="text-[11px] uppercase tracking-wide text-fuchsia-300">
+                Instagram · @{lead.ig_handle}
+              </div>
+              <a href={lead.ig_profile || "#"} target="_blank" rel="noopener noreferrer"
+                 className="text-[11px] text-muted-foreground hover:text-foreground">View profile ↗</a>
+            </div>
+            <p className="text-[11px] text-muted-foreground">
+              Owners read IG themselves. Check the profile is active, then DM the text above — never a cold blast.
+            </p>
+            <div className="flex flex-wrap items-center gap-2">
+              <a href={lead.ig_dm_link} target="_blank" rel="noopener noreferrer"
+                 onClick={() => { if (lead.dm) copyText(lead.dm); }}
+                 className="inline-flex items-center gap-1.5 rounded-md border border-fuchsia-500/30 bg-fuchsia-500/10 px-2.5 py-1 text-xs text-fuchsia-200 hover:bg-fuchsia-500/20 transition-colors">
+                <Instagram className="h-3.5 w-3.5" /> Open DM {lead.dm && "(copies text)"}
+              </a>
+              <Button size="sm" variant="outline" disabled={sentVia.isPending}
+                      onClick={() => sentVia.mutate("instagram")}>
+                {sentVia.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />} I DM'd them
+              </Button>
+            </div>
           </div>
         )}
 
@@ -176,6 +289,10 @@ function LeadCard({ lead }: { lead: TodayLead }) {
         )}
 
         <div className="flex flex-wrap items-center gap-2">
+          <Button size="sm" variant="outline" disabled={demo.isPending} onClick={() => demo.mutate()}
+                  title="Open a WhatsApp-style demo of this clinic's AI receptionist — screenshot it into the chat">
+            {demo.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <PlayCircle className="h-3.5 w-3.5" />} Demo
+          </Button>
           <CopyBtn text={lead.subject} label="Copy subject" />
           <CopyBtn text={lead.body} label="Copy body" />
           {lead.dm && <CopyBtn text={lead.dm} label="Copy DM" />}
@@ -223,7 +340,17 @@ export default function TodayPage() {
   const qc = useQueryClient();
   const today = useQuery({
     queryKey: ["today"],
-    queryFn: () => api.get<{ mode: string; count: number; leads: TodayLead[]; send_window?: { ok: boolean; hint: string } }>("/today"),
+    queryFn: () => api.get<{
+      mode: string; count: number; leads: TodayLead[];
+      send_window?: { ok: boolean; hint: string };
+      sending_health?: {
+        status: "ok" | "warning" | "critical";
+        bounce_rate: number | null; reply_rate: number | null;
+        attempted_30d: number; sent_today: number; daily_cap: number;
+        from_address: string | null; personal_account: boolean;
+        issues: { level: string; text: string }[];
+      };
+    }>("/today"),
   });
 
   const run = useMutation({
@@ -276,6 +403,44 @@ export default function TodayPage() {
           {today.data.send_window.hint}
         </div>
       )}
+
+      {today.data?.sending_health && (() => {
+        const h = today.data.sending_health!;
+        const tone = h.status === "critical"
+          ? "border-red-500/30 bg-red-500/[0.06] text-red-200"
+          : h.status === "warning"
+          ? "border-amber-500/30 bg-amber-500/[0.06] text-amber-200"
+          : "border-emerald-500/30 bg-emerald-500/[0.06] text-emerald-200";
+        return (
+          <div className={`rounded-md border px-3 py-2 text-sm ${tone}`}>
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
+              <span className="inline-flex items-center gap-1.5 font-medium">
+                <Activity className="h-4 w-4 shrink-0" /> Sending health
+              </span>
+              <span className="tabular-nums">
+                Bounce: {h.bounce_rate == null ? "—" : `${h.bounce_rate}%`}
+                <span className="text-muted-foreground"> (of {h.attempted_30d} sent, 30d)</span>
+              </span>
+              <span className="tabular-nums">
+                Replies: {h.reply_rate == null ? "—" : `${h.reply_rate}%`}
+              </span>
+              <span className="tabular-nums">
+                Today: {h.sent_today}/{h.daily_cap}
+              </span>
+              {h.from_address && (
+                <span className="text-muted-foreground">from {h.from_address}</span>
+              )}
+            </div>
+            {h.issues.length > 0 && (
+              <ul className="mt-1.5 space-y-0.5">
+                {h.issues.map((i, n) => (
+                  <li key={n} className="text-xs opacity-90">• {i.text}</li>
+                ))}
+              </ul>
+            )}
+          </div>
+        );
+      })()}
 
       {today.isLoading && <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />}
       {today.data?.count === 0 && (

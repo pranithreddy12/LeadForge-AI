@@ -67,3 +67,35 @@ def find_email(domain: str, company_name: str | None = None, *,
     log.info("hunter_domain_search", domain=domain, found=len(out),
              top_confidence=(out[0]["confidence"] if out else None))
     return out
+
+
+_FINDER_ENDPOINT = "https://api.hunter.io/v2/email-finder"
+
+
+def find_person_email(domain: str, first_name: str, last_name: str, *,
+                      api_key: str | None = None) -> dict | None:
+    """Hunter Email Finder: the likely email for a SPECIFIC person at a domain.
+    Returns {email, confidence, sources} or None. This is how we turn a scraped
+    owner NAME + their domain into a real decision-maker inbox (vs a generic info@)."""
+    key = (api_key or settings.hunter_api_key or "").strip()
+    if not key or key.endswith("xxx") or len(key) < 20 or not domain \
+            or not first_name or not last_name:
+        return None
+    params = {"domain": domain, "first_name": first_name, "last_name": last_name,
+              "api_key": key}
+    try:
+        r = httpx.get(_FINDER_ENDPOINT, params=params, timeout=15.0)
+    except Exception as e:
+        log.warning("hunter_finder_failed", domain=domain, error=str(e)[:160])
+        return None
+    if r.status_code >= 400:
+        log.info("hunter_finder_error", domain=domain, status=r.status_code)
+        return None
+    try:
+        d = r.json().get("data") or {}
+    except Exception:
+        return None
+    if not d.get("email"):
+        return None
+    return {"email": d["email"], "confidence": int(d.get("score") or 0),
+            "sources": len(d.get("sources") or [])}

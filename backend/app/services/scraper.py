@@ -163,6 +163,24 @@ _CONTACT_PATHS = ("", "/contact", "/contact-us", "/contactus", "/about",
 # local-parts/domains that are never a real outreach address
 _EMAIL_JUNK_LOCAL = ("noreply", "no-reply", "donotreply", "postmaster", "abuse",
                      "mailer-daemon", "example", "your", "name", "email", "user")
+# Recruiting / HR inboxes — pitching these reads as careless and never reaches a
+# buyer, so they're dropped from outreach entirely. Matched as the WHOLE local-part
+# or a clear prefix ("careers", "careers-uae", "hr.dubai"), NOT as a substring — else
+# "sarah.roberts" would falsely match "hr" and "christopher" would match "chr".
+_ROLE_JUNK = ("careers", "career", "jobs", "job", "recruit", "recruitment",
+              "recruiting", "hr", "humanresources", "hiring", "cv", "cvs",
+              "vacancy", "vacancies", "apply", "applications", "resume", "resumes",
+              "talent", "internship", "internships")
+
+
+def _is_recruiting_local(local: str) -> bool:
+    """True if the mailbox is a recruiting/HR inbox (careers@, hr@, jobs.uae@ ...)."""
+    lp = local.lower()
+    for r in _ROLE_JUNK:
+        if lp == r or lp.startswith(r + ".") or lp.startswith(r + "-") \
+                or lp.startswith(r + "_") or lp.startswith(r + "@"):
+            return True
+    return False
 _EMAIL_ASSET_SUFFIX = (".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".css",
                        ".js", ".ico", ".woff", ".woff2")
 _EMAIL_JUNK_DOMAINS = ("example.com", "sentry.io", "wixpress.com", "godaddy.com",
@@ -194,6 +212,8 @@ def scrape_emails_for_domain(domain: str, *, max_pages: int = 6) -> list[str]:
             if e.endswith(_EMAIL_ASSET_SUFFIX):
                 continue
             if any(j in local for j in _EMAIL_JUNK_LOCAL):
+                continue
+            if _is_recruiting_local(local):   # careers@ / hr@ / jobs@ — never outreach
                 continue
             # only the company's OWN domain (drop partner/CDN/tracking emails)
             if _registrable(dom) != reg:

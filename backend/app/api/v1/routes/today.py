@@ -20,6 +20,9 @@ from app.models.scoring import LeadScore
 from app.models.signal import Signal
 from app.models.tenant import Organization
 from app.models.workflow import Workflow
+from app.services.instagram import dm_link as ig_dm_link
+from app.services.instagram import handle_from_url as ig_handle
+from app.services.instagram import profile_link as ig_profile
 from app.services.presend import mx_ok, spam_flags
 from app.services.settings_resolver import outreach_send_mode
 from app.services.whatsapp_sender import normalize_phone, wa_link
@@ -98,9 +101,15 @@ def _lead_card(db: Session, co: Company, m: EmailMessage | None) -> dict:
         "dm": (m.meta or {}).get("dm") if m else None,
         "dm_ar": (m.meta or {}).get("dm_ar") if m else None,
         "auto_reply_comeback": (m.meta or {}).get("auto_reply_comeback") if m else None,
+        "edited": bool((m.meta or {}).get("edited")) if m else False,
         "wa_link": wa_link(places.get("phone_intl")
                            or normalize_phone(places.get("phone"))),
         "socials": (co.raw or {}).get("socials") or {},
+        # Instagram — where a med-spa OWNER actually is (62 of our leads have one, vs
+        # 1 with a person-level email). Manual-only: we open the chat, never auto-send.
+        "ig_handle": ig_handle(((co.raw or {}).get("socials") or {}).get("instagram")),
+        "ig_dm_link": ig_dm_link(((co.raw or {}).get("socials") or {}).get("instagram")),
+        "ig_profile": ig_profile(((co.raw or {}).get("socials") or {}).get("instagram")),
     }
 
 
@@ -123,8 +132,9 @@ def todays_leads(db: Session = Depends(get_db), org: Organization = Depends(curr
             continue
         leads.append(_lead_card(db, co, m))
     leads.sort(key=lambda x: (x["score"] is not None, x["score"] or 0), reverse=True)
+    from app.services.sending_health import sending_health
     return {"mode": outreach_send_mode(db, org.id), "count": len(leads), "leads": leads,
-            "send_window": _send_window()}
+            "send_window": _send_window(), "sending_health": sending_health(db, org.id)}
 
 
 def _send_window() -> dict:
@@ -273,6 +283,56 @@ def mark_sent(company_id: uuid.UUID, db: Session = Depends(get_db),
     return {"ok": True, "company": co.name, "logged": "sent"}
 
 
+@router.post("/{company_id}/find-owner-email")
+def find_owner_email_now(company_id: uuid.UUID, db: Session = Depends(get_db),
+                         org: Organization = Depends(current_org)):
+    """Turn this lead's scraped owner NAME into a verified decision-maker email
+    (vs the generic info@). Only persists an address that Hunter or a validator
+    confirms — an unverified guess would bounce, so it's never saved."""
+    from app.services.owner_email import find_owner_email
+    co = db.get(Company, company_id)
+    if not co or co.organization_id != org.id:
+        raise NotFound("Company")
+    res = find_owner_email(db, co)
+    if res.get("found"):
+        return {"found": True, "email": res["email"], "name": res.get("name"),
+                "method": res.get("method"), "card": _lead_card(db, co, _draft_for_company(db, org.id, company_id))}
+    hints = {
+        "no_domain": "This lead has no website — reach them on WhatsApp.",
+        "no_owner_name": "No owner name found on the site to build an address from.",
+        "no_verified_email": "Couldn't verify a personal address — no deliverable match.",
+        "needs_hunter_or_neverbounce_key": "Add a Hunter or NeverBounce key in Settings to verify constructed addresses.",
+    }
+    return {"found": False, "reason": res.get("reason"),
+            "detail": hints.get(res.get("reason"), "No owner email found.")}
+
+
+class DraftEdit(BaseModel):
+    subject: str | None = None
+    body: str | None = None
+
+
+@router.patch("/{company_id}/draft")
+def edit_draft(company_id: uuid.UUID, payload: DraftEdit,
+               db: Session = Depends(get_db), org: Organization = Depends(current_org)):
+    """Save your edits to this lead's draft (subject/body) before sending. Returns the
+    refreshed card so the spam-flag + MX checks re-run on YOUR wording, not the AI's."""
+    co = db.get(Company, company_id)
+    if not co or co.organization_id != org.id:
+        raise NotFound("Company")
+    m = _draft_for_company(db, org.id, company_id)
+    if m is None:
+        return {"ok": False, "reason": "no_draft",
+                "detail": "Generate a draft first, then edit it."}
+    if payload.subject is not None:
+        m.subject = payload.subject.strip()[:300]
+    if payload.body is not None:
+        m.body = payload.body
+    m.meta = {**(m.meta or {}), "edited": True}
+    db.commit()
+    return {"ok": True, "card": _lead_card(db, co, m)}
+
+
 @router.post("/{company_id}/send-email")
 def send_email_now(company_id: uuid.UUID, db: Session = Depends(get_db),
                    org: Organization = Depends(current_org)):
@@ -330,6 +390,58 @@ def send_email_now(company_id: uuid.UUID, db: Session = Depends(get_db),
         notes=f"sent from app to {result.get('to')}"))
     db.commit()
     return {"sent": True, "to": result.get("to"), "company": co.name}
+
+
+@router.get("/{company_id}/demo")
+def lead_demo(company_id: uuid.UUID, db: Session = Depends(get_db),
+              org: Organization = Depends(current_org)):
+    """A shareable WhatsApp-style demo of THIS clinic's AI receptionist booking an
+    after-hours enquiry — grounded in the lead's real facts + signal, DHA-compliant,
+    clearly labelled as a simulation. Returned as HTML for the owner to screenshot into
+    a WhatsApp/IG chat. 'Show, don't tell' — the counter to a $97 competitor."""
+    from app.services.demo_asset import build_demo_html
+    from app.services.settings_resolver import settings_row
+    co = db.get(Company, company_id)
+    if not co or co.organization_id != org.id:
+        raise NotFound("Company")
+    kinds = {k for (k,) in db.execute(
+        select(Signal.kind).where(Signal.company_id == co.id))}
+    s = settings_row(db, org.id)
+    sender = (s.gmail_from_name if s and getattr(s, "gmail_from_name", None) else None) \
+        or (org.name if getattr(org, "name", None) else "your team")
+    html = build_demo_html(co, kinds, sender_name=sender,
+                           doctor=_decision_maker(db, co.id))
+    return {"company": co.name, "html": html}
+
+
+class SentVia(BaseModel):
+    channel: str = "email"   # email | whatsapp | instagram
+
+
+@router.post("/{company_id}/sent-via")
+def mark_sent_via(company_id: uuid.UUID, body: SentVia, db: Session = Depends(get_db),
+                  org: Organization = Depends(current_org)):
+    """'I DM'd / messaged this lead myself on <channel>' — logs the real channel so the
+    funnel reflects where outreach actually happens. Instagram and WhatsApp are manual
+    by design (Meta bans cold-DM automation), so this is how they enter the pipeline."""
+    channel = body.channel if body.channel in ("email", "whatsapp", "instagram") else "email"
+    co = db.get(Company, company_id)
+    if not co or co.organization_id != org.id:
+        raise NotFound("Company")
+    # Take it off the review queue only for the channel that owns the draft (email).
+    m = _draft_for_company(db, org.id, company_id)
+    if m is not None and channel == "email":
+        m.status = "sent"
+        m.sent_at = func.now()
+        m.meta = {**(m.meta or {}), "manual_sent": True}
+    if co.pipeline_stage in ("new", "qualified"):
+        co.pipeline_stage = "contacted"
+    db.add(ManualOutreachLog(
+        organization_id=org.id, company_id=co.id, company_name=co.name,
+        channel=channel, action="sent", sent_by_me=True,
+        notes=f"manual {channel} outreach"))
+    db.commit()
+    return {"ok": True, "company": co.name, "channel": channel}
 
 
 @router.post("/{company_id}/optout")
