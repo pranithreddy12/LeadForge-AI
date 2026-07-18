@@ -46,3 +46,4 @@ tmp/
 # dev artifacts
 .playwright-mcp/
 *.png
+backend/celerybeat-schedule
