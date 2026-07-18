@@ -428,12 +428,20 @@ def mark_sent_via(company_id: uuid.UUID, body: SentVia, db: Session = Depends(ge
     co = db.get(Company, company_id)
     if not co or co.organization_id != org.id:
         raise NotFound("Company")
-    # Take it off the review queue only for the channel that owns the draft (email).
+    # Take the email draft off the review queue no matter which channel you used.
+    #   - email  -> the draft was sent, mark it 'sent' (enables reply-matching).
+    #   - wa/ig  -> you reached them another way, so 'contacted' now suppresses the
+    #     email Send button. Marking the draft 'skipped' removes the lead from /today
+    #     so it doesn't linger with a Send button that would just error (review #1).
     m = _draft_for_company(db, org.id, company_id)
-    if m is not None and channel == "email":
-        m.status = "sent"
-        m.sent_at = func.now()
-        m.meta = {**(m.meta or {}), "manual_sent": True}
+    if m is not None:
+        if channel == "email":
+            m.status = "sent"
+            m.sent_at = func.now()
+            m.meta = {**(m.meta or {}), "manual_sent": True}
+        else:
+            m.status = "skipped"
+            m.meta = {**(m.meta or {}), "skip_reason": f"contacted via {channel}"}
     if co.pipeline_stage in ("new", "qualified"):
         co.pipeline_stage = "contacted"
     db.add(ManualOutreachLog(
