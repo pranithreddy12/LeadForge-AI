@@ -60,12 +60,16 @@ def score_company(db: Session, *, organization_id: uuid.UUID,
         # geography (countries + Settings target_locations).
         icp_terms = list(icp.industries or []) + list(icp.keywords or [])
         icp_geos = list(icp.countries or []) + list(_s.target_locations or [])
+        _socials = (company.raw or {}).get("socials") or {}
+        _places = (company.raw or {}).get("places") or {}
         lf = score_local_fit(
             company_name=company.name, industry=company.industry,
-            places=(company.raw or {}).get("places") or {},
+            places=_places,
             signal_kinds=[s.kind for s in signals],
             icp_terms=icp_terms, icp_geos=icp_geos,
-            min_reviews=_s.min_reviews or 10)
+            min_reviews=_s.min_reviews or 10,
+            has_website=bool(company.website or _places.get("website")),
+            has_instagram=bool(_socials.get("instagram")))
         score = LeadScore(
             organization_id=organization_id, company_id=company.id, icp_id=icp.id,
             score=lf["score"], grade=lf["grade"], probability=lf["probability"],

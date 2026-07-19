@@ -13,6 +13,7 @@ Every point cites a real, checkable fact.
 """
 from __future__ import annotations
 
+import math
 import re
 
 
@@ -95,26 +96,47 @@ def _grade(score: int) -> str:
     return "F"
 
 
+def _demand_points(review_count: int) -> int:
+    """Map Google review_count -> 0..38 on a smooth log curve. Reviews are the one fact
+    with real spread across local leads (15 .. ~4000), so this is our main separator:
+    more reviews = more enquiry volume = more that a busy front desk can miss.
+      ~15 -> ~3   ~100 -> ~16   ~500 -> ~27   ~1000 -> ~32   3000+ -> 38
+    """
+    if review_count <= 0:
+        return 0
+    return max(0, min(38, round((math.log10(review_count) - 1.0) * 16)))
+
+
 def score_local_fit(*, company_name: str | None = None, industry: str | None = None,
                     places: dict | None = None, signal_kinds: list[str] | None = None,
                     icp_terms: list[str] | None = None, icp_geos: list[str] | None = None,
-                    min_reviews: int = 10) -> dict:
-    """Return {score, grade, fit_score, pain_score, probability, reasoning[]}.
+                    min_reviews: int = 10,
+                    has_website: bool = False, has_instagram: bool = False) -> dict:
+    """Score a local business 0-100 on how much it needs (and can be reached about) an AI
+    receptionist. Built ONLY on facts we can actually observe for every lead, so scores
+    spread into a real ranking instead of clustering:
 
-    icp_terms = the ICP's target vertical terms (industries + keywords).
-    icp_geos  = the ICP's target geography (countries + target_locations).
+      FIT (0-25)    - matches the ICP vertical + geography you configured
+      DEMAND (0-38) - Google review_count on a log curve (our main separator)
+      NEED (0-28)   - no online booking (+20) / limited opening hours (+8)
+      REACH (0-23)  - Instagram (owner-run, reachable), no website, mobile line
+      QUALITY (0-10)- rating position INSIDE the 4-5 band (lower = more service gaps)
+
+    We deliberately do NOT score review-text pain signals (missed/slow-response) or a
+    sub-4.0 rating: Google gates review text behind a paid SKU we don't call, and curated
+    med-spas never fall below 4.0, so those dimensions were dead weight that flattened
+    every score. icp_terms/icp_geos come from the ICP; has_website/has_instagram from the
+    company's scraped socials.
     """
     kinds = set(signal_kinds or [])
     places = places or {}
     reasons: list[str] = []
 
-    # ---- ICP FIT (does this lead match the ICP the user configured?) --------
-    # Match on the ICP's distinctive VERTICAL KEYWORDS (spa, clinic, aesthetic, skin,
-    # laser, dental...), not the exact multi-word phrase -- so "Armonia Spa" matches a
-    # "med spa" ICP. Generic filler words are dropped.
+    # ---- FIT: matches the ICP the user configured? (kept small so it separates, not
+    #      dominates -- nearly every discovered lead is a target spa in the target city) -
     _STOP = {"and", "the", "for", "med", "of", "in", "business", "service", "services",
              "center", "centre", "co", "llc"}
-    icp_fit = 0
+    fit = 0
     kw: set[str] = set()
     for t in (icp_terms or []):
         for w in _norm(t).split():
@@ -123,80 +145,74 @@ def score_local_fit(*, company_name: str | None = None, industry: str | None = N
     haystack = _norm(f"{company_name or ''} {industry or ''} {places.get('type') or ''}")
     if kw:
         if any(w in haystack for w in kw):
-            icp_fit += 20
+            fit += 15
             reasons.append("Matches your ICP vertical")
         else:
             reasons.append("Outside your ICP vertical (no vertical match)")
     else:
-        icp_fit += 12  # no vertical configured -> neutral benefit of the doubt
+        fit += 9  # no vertical configured -> neutral benefit of the doubt
 
     geos = [_norm(g) for g in (icp_geos or []) if _norm(g)]
     addr = _norm(f"{places.get('address') or ''} {places.get('formatted_address') or ''}")
     if geos:
         if any(g in addr for g in geos):
-            icp_fit += 10
+            fit += 10
             reasons.append("In your target geography")
         else:
             reasons.append("Outside your target geography")
     else:
-        icp_fit += 6
+        fit += 5
 
-    # ---- NEED FIT (do they need the AI receptionist?) -----------------------
+    # ---- DEMAND: review_count (real, wide-spread) on a log curve --------------
+    rc = int(places.get("review_count") or 0)
+    demand = _demand_points(rc)
+    if rc:
+        tier = ("very high" if demand >= 24 else "high" if demand >= 18
+                else "solid" if demand >= 10 else "modest")
+        reasons.append(f"{tier.capitalize()} demand ({rc} Google reviews) — more enquiries to field")
+
+    # ---- NEED: the clearest buy signals we can scrape -------------------------
     need = 0
     if "no_online_booking" in kinds:
-        need += 25
-        reasons.append("No online booking, enquiries rely on calls/DMs (core fit)")
-    phone = places.get("phone") or places.get("phone_intl")
-    if phone:
+        need += 20
+        reasons.append("No online booking — enquiries rely on calls/DMs (core fit)")
+    if "limited_hours" in kinds:
         need += 8
-        reasons.append("Has a phone line to reach")
-    # AUDIT C5: the old bullet claimed "WhatsApp-reachable" purely because Google
-    # returns an international-format number for EVERY business — zero WhatsApp
-    # verification. That is false for landlines (a Dubai 04 / a US 512 line is almost
-    # never on WhatsApp). We can't verify WhatsApp registration without the Business
-    # API, so we only note a MOBILE number (the necessary precondition) and say so.
+        reasons.append("Closed days / early close in their Google hours — after-hours enquiries have nowhere to go")
+
+    # ---- REACH: can we get to the owner, and how big is the digital gap? -------
+    reach = 0
+    if has_instagram:
+        reach += 12
+        reasons.append("Active on Instagram — owner-run and reachable by DM")
+    if not has_website:
+        reach += 6
+        reasons.append("No website — books entirely via calls/DMs (bigger front-desk gap)")
     if _is_mobile(places.get("phone_intl") or places.get("phone")):
-        need += 4
+        reach += 5
         reasons.append("Mobile number listed (may be WhatsApp-reachable — unverified)")
 
-    rc = int(places.get("review_count") or 0)
-    base = max(1, int(min_reviews or 10))
-    # AUDIT C6: the review COUNT is a real Places fact; "more reviews => more missed
-    # enquiries" is a HYPOTHESIS, not a measured fact. Phrase it as one.
-    if rc >= base * 10:
-        need += 15
-        reasons.append(f"High demand ({rc} reviews) — likely more enquiries than staff can catch")
-    elif rc >= base * 3:
-        need += 10
-        reasons.append(f"Solid demand ({rc} reviews)")
-    elif rc >= base:
-        need += 5
-        reasons.append(f"Established ({rc} reviews)")
+    # ---- QUALITY: within the tight 4-5 band, a LOWER rating = more service gaps
+    #      we can help close. This is the only honest use of the rating we do have. -----
+    rating = places.get("rating")
+    quality = 0
+    if isinstance(rating, (int, float)):
+        if rating < 4.5:
+            quality = 10
+            reasons.append(f"Rating {rating} (softer end of 4-5) — more service gaps to close")
+        elif rating < 4.8:
+            quality = 5
+            reasons.append(f"Rating {rating} — some room to tighten response")
 
-    # ---- PAIN (do they visibly have the problem?) ---------------------------
-    pain = 0
-    if "missed_calls_complaint" in kinds:
-        pain += 12
-        reasons.append("Reviews mention missed/unanswered calls")
-    if "slow_response_complaint" in kinds:
-        pain += 6
-        reasons.append("Reviews mention slow response / wait times")
-    if "low_rating" in kinds:
-        pain += 4
-        reasons.append("Below-4.0 rating suggests service gaps")
-    if "limited_hours" in kinds:
-        pain += 6
-        # AUDIT C7: stated as the observation it is, not a claimed outcome.
-        reasons.append("Closed days / early close in their Google hours — enquiries then have nowhere to go")
-
-    score = min(100, icp_fit + need + pain)
+    raw_total = fit + demand + need + reach + quality
+    score = min(100, raw_total)
     if not reasons:
         reasons.append("Local business; limited signal data")
     return {
         "score": score,
         "grade": _grade(score),
-        "fit_score": min(100, icp_fit + need),
-        "pain_score": min(100, pain),
+        "fit_score": min(100, fit + demand + need),
+        "pain_score": min(100, need + quality),
         "probability": round(score / 100, 2),
         "reasoning": reasons,
     }
