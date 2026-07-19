@@ -91,10 +91,11 @@ export interface RunLead {
 
 export interface TodayLead {
   draft_id: ID;
-  drafted_at?: string | null;
+  found_at?: string | null;
   company_id: ID;
   company_name: string;
   domain?: string | null;
+  location?: string | null;
   score?: number | null;
   grade?: string | null;
   signal?: string | null;

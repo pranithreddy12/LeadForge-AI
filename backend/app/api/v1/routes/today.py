@@ -62,6 +62,29 @@ def _recipient(db: Session, m: EmailMessage) -> str | None:
     return (m.meta or {}).get("to")
 
 
+# Cities we discover in (UAE emirates + common US metros). Matched against the Google
+# formatted_address (ground truth) — the stored city column is sometimes wrong.
+_KNOWN_CITIES = (
+    "Abu Dhabi", "Dubai", "Sharjah", "Ajman", "Ras Al Khaimah", "Fujairah",
+    "Umm Al Quwain", "Al Ain",
+    "Dallas", "Fort Worth", "Plano", "Irving", "Arlington", "Frisco", "McKinney",
+    "New York", "Las Vegas", "Houston", "Austin", "San Antonio", "Los Angeles",
+    "Miami", "Chicago",
+)
+
+
+def _location_label(co: Company) -> str | None:
+    """A clean city label for filtering. Prefers a known city found in the Google
+    address (ground truth), then the stored city/region."""
+    p = (co.raw or {}).get("places") or {}
+    addr = (p.get("formatted_address") or p.get("address") or "")
+    low = addr.lower()
+    for city in _KNOWN_CITIES:
+        if city.lower() in low:
+            return city
+    return co.city or p.get("city") or co.region or None
+
+
 def _decision_maker(db: Session, company_id) -> str | None:
     r = db.execute(
         select(Contact.name).where(Contact.company_id == company_id,
@@ -85,10 +108,13 @@ def _lead_card(db: Session, co: Company, m: EmailMessage | None) -> dict:
         "draft_id": str(m.id) if m else None,
         "draft_status": m.status if m else None,   # 'draft' | 'sent' — so a sent lead's
                                                    # content is still visible on the page
-        "drafted_at": (m.created_at.isoformat() if m and m.created_at else None),
+        # When the LEAD was discovered (company created), not when its draft was written —
+        # the draft date collapses to "today" whenever drafts are regenerated in bulk.
+        "found_at": (co.created_at.isoformat() if co.created_at else None),
         "company_id": str(co.id),
         "company_name": co.name,
         "domain": co.domain,
+        "location": _location_label(co),
         "score": score,
         "grade": grade,
         "signal": _top_signal(db, co.id),

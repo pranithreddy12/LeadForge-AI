@@ -3,8 +3,8 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  Activity, Ban, Check, Clock, Facebook, Filter, Instagram, Linkedin, Loader2,
-  Mail, MessageCircle, MessageSquare, Music2, Pencil, Phone, PhoneOff, PlayCircle, RefreshCw, Send, SkipForward, UserSearch, Users, Youtube,
+  Activity, Ban, Check, ChevronDown, Clock, Facebook, Filter, Instagram, Linkedin, Loader2,
+  Mail, MapPin, MessageCircle, MessageSquare, Music2, Pencil, Phone, PhoneOff, PlayCircle, RefreshCw, Send, SkipForward, UserSearch, Users, Youtube,
 } from "lucide-react";
 import { toast } from "sonner";
 import Link from "next/link";
@@ -14,6 +14,10 @@ import type { TodayLead } from "@/lib/types";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import {
+  DropdownMenu, DropdownMenuTrigger, DropdownMenuContent,
+  DropdownMenuLabel, DropdownMenuItem, DropdownMenuSeparator,
+} from "@/components/ui/dropdown-menu";
 
 const SKIP_REASONS = [
   ["bad_fit", "Bad fit"],
@@ -492,8 +496,8 @@ const MEDIA: { key: string; label: string; Icon: any; test: (l: TodayLead) => bo
   { key: "linkedin",  label: "LinkedIn",  Icon: Linkedin,      test: (l) => !!l.linkedin_url },
 ];
 
-// Which day-bucket a lead's draft falls into (by when it was drafted). Undated leads
-// (no drafted_at) sort into "older" so they never vanish from an unfiltered view.
+// Which day-bucket a lead falls into (by when it was FOUND/discovered). Undated leads
+// (no found_at) sort into "older" so they never vanish from an unfiltered view.
 function dayBucket(iso?: string | null): "today" | "yesterday" | "week" | "older" {
   if (!iso) return "older";
   const d = new Date(iso);
@@ -513,7 +517,7 @@ const DATE_FILTERS: { key: string; label: string }[] = [
 // "week" is inclusive of today+yesterday, so a lead counts for it if it's within 7 days.
 function matchesDate(l: TodayLead, key: string): boolean {
   if (key === "all") return true;
-  const b = dayBucket(l.drafted_at);
+  const b = dayBucket(l.found_at);
   if (key === "week") return b === "today" || b === "yesterday" || b === "week";
   return b === key;
 }
@@ -522,6 +526,7 @@ export default function TodayPage() {
   const qc = useQueryClient();
   const [medium, setMedium] = useState<string>("all");
   const [dateKey, setDateKey] = useState<string>("all");
+  const [loc, setLoc] = useState<string>("all");
   const today = useQuery({
     queryKey: ["today"],
     queryFn: () => api.get<{
@@ -649,52 +654,112 @@ export default function TodayPage() {
       {(() => {
         const leads = today.data?.leads ?? [];
         if (leads.length === 0) return null;
-        const active = MEDIA.find((m) => m.key === medium);
-        // Counts for each dimension reflect the OTHER active filter, so a chip's number
-        // matches what you'd actually see after clicking it.
-        const byDate = leads.filter((l) => matchesDate(l, dateKey));
-        const byMedium = active ? leads.filter(active.test) : leads;
-        const filtered = leads.filter((l) => (!active || active.test(l)) && matchesDate(l, dateKey));
+
+        // Per-dimension predicates. Each dimension's option counts are computed against
+        // the leads already narrowed by the OTHER two, so a count matches what you'll see.
+        const activeMedium = MEDIA.find((m) => m.key === medium);
+        const mediumOk = (l: TodayLead) => !activeMedium || activeMedium.test(l);
+        const dateOk = (l: TodayLead) => matchesDate(l, dateKey);
+        const locOf = (l: TodayLead) => l.location || "Unknown";
+        const locOk = (l: TodayLead) => loc === "all" || locOf(l) === loc;
+
+        // Distinct locations present in today's leads, most-common first.
+        const locCounts = new Map<string, number>();
+        for (const l of leads.filter((x) => mediumOk(x) && dateOk(x))) {
+          const k = locOf(l);
+          locCounts.set(k, (locCounts.get(k) || 0) + 1);
+        }
+        const allLocs = Array.from(new Set(leads.map(locOf)))
+          .sort((a, b) => (locCounts.get(b) || 0) - (locCounts.get(a) || 0) || a.localeCompare(b));
+
+        const forMedium = leads.filter((l) => locOk(l) && dateOk(l));
+        const forDate = leads.filter((l) => locOk(l) && mediumOk(l));
+        const filtered = leads.filter((l) => locOk(l) && mediumOk(l) && dateOk(l));
+
+        const activeCount = (loc !== "all" ? 1 : 0) + (medium !== "all" ? 1 : 0) + (dateKey !== "all" ? 1 : 0);
+        const clearAll = () => { setLoc("all"); setMedium("all"); setDateKey("all"); };
+
         return (
           <>
-            <div className="flex flex-wrap items-center gap-1.5">
-              <span className="inline-flex items-center gap-1 text-xs text-muted-foreground mr-1">
-                <Filter className="h-3.5 w-3.5" /> Reachable by:
-              </span>
-              <FilterChip label="All" Icon={Users} count={byDate.length}
-                          active={medium === "all"} onClick={() => setMedium("all")} />
-              {MEDIA.map((m) => {
-                const n = byDate.filter(m.test).length;
-                return (
-                  <FilterChip key={m.key} label={m.label} Icon={m.Icon} count={n}
-                              disabled={n === 0}
-                              active={medium === m.key} onClick={() => setMedium(m.key)} />
-                );
-              })}
-            </div>
+            <div className="flex items-center justify-between gap-3 flex-wrap">
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="outline" size="sm" className="gap-1.5">
+                    <Filter className="h-3.5 w-3.5" /> Filters
+                    {activeCount > 0 && <Badge variant="brand" className="ml-0.5 px-1.5">{activeCount}</Badge>}
+                    <ChevronDown className="h-3.5 w-3.5 opacity-70" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="start"
+                  className="w-64 overflow-y-auto max-h-[min(70vh,var(--radix-dropdown-menu-content-available-height))]">
+                  {/* Short, fixed-length sections first (Found + Reachable) so they're
+                      always visible; the long, variable Location list scrolls at the end. */}
+                  <DropdownMenuLabel className="flex items-center gap-1.5"><Clock className="h-3.5 w-3.5" /> Found</DropdownMenuLabel>
+                  <OptionRow label="Any date" count={forDate.length}
+                             active={dateKey === "all"} onSelect={() => setDateKey("all")} />
+                  {DATE_FILTERS.map((d) => {
+                    const n = forDate.filter((l) => matchesDate(l, d.key)).length;
+                    return (
+                      <OptionRow key={d.key} label={d.label} count={n} disabled={n === 0}
+                                 active={dateKey === d.key} onSelect={() => setDateKey(d.key)} />
+                    );
+                  })}
 
-            <div className="flex flex-wrap items-center gap-1.5">
-              <span className="inline-flex items-center gap-1 text-xs text-muted-foreground mr-1">
-                <Clock className="h-3.5 w-3.5" /> Drafted:
-              </span>
-              <FilterChip label="Any date" Icon={Clock} count={byMedium.length}
-                          active={dateKey === "all"} onClick={() => setDateKey("all")} />
-              {DATE_FILTERS.map((d) => {
-                const n = byMedium.filter((l) => matchesDate(l, d.key)).length;
-                return (
-                  <FilterChip key={d.key} label={d.label} Icon={Clock} count={n}
-                              disabled={n === 0}
-                              active={dateKey === d.key} onClick={() => setDateKey(d.key)} />
-                );
-              })}
+                  <DropdownMenuSeparator />
+                  <DropdownMenuLabel className="flex items-center gap-1.5"><Users className="h-3.5 w-3.5" /> Reachable by</DropdownMenuLabel>
+                  <OptionRow label="Any channel" count={forMedium.length}
+                             active={medium === "all"} onSelect={() => setMedium("all")} />
+                  {MEDIA.map((m) => {
+                    const n = forMedium.filter(m.test).length;
+                    return (
+                      <OptionRow key={m.key} label={m.label} Icon={m.Icon} count={n} disabled={n === 0}
+                                 active={medium === m.key} onSelect={() => setMedium(m.key)} />
+                    );
+                  })}
+
+                  <DropdownMenuSeparator />
+                  <DropdownMenuLabel className="flex items-center gap-1.5"><MapPin className="h-3.5 w-3.5" /> Location</DropdownMenuLabel>
+                  {/* Location list can be long (many cities) — cap it with its own scroll
+                      so it never pushes the sections above off-screen. */}
+                  <div className="max-h-40 overflow-y-auto">
+                    <OptionRow label="Any location" count={forMedium.length /* == locOk-agnostic base */}
+                               active={loc === "all"} onSelect={() => setLoc("all")} />
+                    {allLocs.map((L) => (
+                      <OptionRow key={L} label={L} count={locCounts.get(L) || 0}
+                                 disabled={(locCounts.get(L) || 0) === 0}
+                                 active={loc === L} onSelect={() => setLoc(L)} />
+                    ))}
+                  </div>
+
+                  {activeCount > 0 && (
+                    <>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem onSelect={(e) => { e.preventDefault(); clearAll(); }}
+                                        className="justify-center text-brand-300 focus:text-brand-200">
+                        Clear all filters
+                      </DropdownMenuItem>
+                    </>
+                  )}
+                </DropdownMenuContent>
+              </DropdownMenu>
+
+              <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                {activeCount > 0 && (
+                  <div className="flex flex-wrap items-center gap-1">
+                    {loc !== "all" && <ActiveTag label={loc} onClear={() => setLoc("all")} />}
+                    {medium !== "all" && <ActiveTag label={MEDIA.find((m) => m.key === medium)?.label || medium} onClear={() => setMedium("all")} />}
+                    {dateKey !== "all" && <ActiveTag label={DATE_FILTERS.find((d) => d.key === dateKey)?.label || dateKey} onClear={() => setDateKey("all")} />}
+                  </div>
+                )}
+                <span className="tabular-nums whitespace-nowrap">Showing {filtered.length} of {leads.length}</span>
+              </div>
             </div>
 
             <div className="space-y-4">
               {filtered.length === 0 ? (
                 <Card><CardContent className="py-8 text-center text-sm text-muted-foreground">
                   No leads match these filters.{" "}
-                  <button className="text-brand-300 hover:underline"
-                          onClick={() => { setMedium("all"); setDateKey("all"); }}>Clear filters</button>
+                  <button className="text-brand-300 hover:underline" onClick={clearAll}>Clear filters</button>
                 </CardContent></Card>
               ) : (
                 filtered.map((l) => <LeadCard key={l.draft_id} lead={l} />)
@@ -707,17 +772,32 @@ export default function TodayPage() {
   );
 }
 
-function FilterChip({ label, Icon, count, active, disabled, onClick }: {
-  label: string; Icon: any; count: number; active: boolean; disabled?: boolean; onClick: () => void;
+// A selectable option inside the Filters dropdown. Keeps the menu open on click so you
+// can adjust several filters in one pass; shows a check when active + a live count.
+function OptionRow({ label, Icon, count, active, disabled, onSelect }: {
+  label: string; Icon?: any; count: number; active: boolean; disabled?: boolean; onSelect: () => void;
 }) {
   return (
-    <button onClick={onClick} disabled={disabled}
-            className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs transition-colors ${
-              active ? "border-brand-400/50 bg-brand-500/15 text-brand-200"
-              : disabled ? "border-white/5 text-muted-foreground/40 cursor-not-allowed"
-              : "border-white/10 text-muted-foreground hover:text-foreground hover:border-white/20"}`}>
-      <Icon className="h-3.5 w-3.5" /> {label}
-      <span className="tabular-nums opacity-70">{count}</span>
-    </button>
+    <DropdownMenuItem
+      disabled={disabled}
+      onSelect={(e) => { e.preventDefault(); if (!disabled) onSelect(); }}
+      className={`justify-between gap-3 ${active ? "text-brand-200" : ""} ${disabled ? "opacity-40" : ""}`}>
+      <span className="inline-flex items-center gap-2 min-w-0">
+        <Check className={`h-3.5 w-3.5 shrink-0 ${active ? "opacity-100 text-brand-300" : "opacity-0"}`} />
+        {Icon && <Icon className="h-3.5 w-3.5 shrink-0 opacity-70" />}
+        <span className="truncate">{label}</span>
+      </span>
+      <span className="tabular-nums text-xs text-muted-foreground">{count}</span>
+    </DropdownMenuItem>
+  );
+}
+
+// A small removable pill summarising one active filter, shown next to the Filters button.
+function ActiveTag({ label, onClear }: { label: string; onClear: () => void }) {
+  return (
+    <span className="inline-flex items-center gap-1 rounded-full border border-brand-400/40 bg-brand-500/10 px-2 py-0.5 text-[11px] text-brand-200">
+      {label}
+      <button onClick={onClear} className="hover:text-white" aria-label={`Clear ${label}`}>✕</button>
+    </span>
   );
 }

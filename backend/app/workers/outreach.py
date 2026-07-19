@@ -3,7 +3,7 @@ from __future__ import annotations
 import uuid
 
 from celery import shared_task
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 
 from app.ai.outreach_engine import generate_outreach
 from app.core.logging import get_logger
@@ -87,6 +87,17 @@ def draft_outreach_for_company(organization_id: str, company_id: str,
         if not variants:
             return {"created": 0}
         v = variants[0]
+        # One primary draft per company: replace any existing UNSENT primary draft on this
+        # channel instead of stacking a second one (re-drafting must not duplicate the lead
+        # on /today). Sent messages are history and are never touched.
+        db.execute(
+            delete(EmailMessage).where(
+                EmailMessage.company_id == company.id,
+                EmailMessage.channel == channel,
+                EmailMessage.status == "draft",
+                EmailMessage.step < 2,
+            )
+        )
         msg = EmailMessage(
             organization_id=uuid.UUID(organization_id),
             campaign_id=uuid.UUID(campaign_id) if campaign_id else None,
