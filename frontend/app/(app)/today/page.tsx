@@ -3,8 +3,8 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  Activity, Ban, Check, Clock, Facebook, Instagram, Linkedin, Loader2,
-  Mail, MessageCircle, MessageSquare, Music2, Pencil, PhoneOff, PlayCircle, RefreshCw, Send, SkipForward, UserSearch, Youtube,
+  Activity, Ban, Check, Clock, Facebook, Filter, Instagram, Linkedin, Loader2,
+  Mail, MessageCircle, MessageSquare, Music2, Pencil, Phone, PhoneOff, PlayCircle, RefreshCw, Send, SkipForward, UserSearch, Users, Youtube,
 } from "lucide-react";
 import { toast } from "sonner";
 import Link from "next/link";
@@ -482,8 +482,46 @@ function LeadCard({ lead }: { lead: TodayLead }) {
   );
 }
 
+// Contact-medium filters for the Today list. Each `test` reads the reachable channels
+// already on the lead card, so filtering is instant + client-side.
+const MEDIA: { key: string; label: string; Icon: any; test: (l: TodayLead) => boolean }[] = [
+  { key: "email",     label: "Email",     Icon: Mail,          test: (l) => !!l.to },
+  { key: "whatsapp",  label: "WhatsApp",  Icon: MessageCircle, test: (l) => !!l.wa_link },
+  { key: "phone",     label: "Phone",     Icon: Phone,         test: (l) => !!l.phone },
+  { key: "instagram", label: "Instagram", Icon: Instagram,     test: (l) => !!(l.ig_dm_link || l.ig_handle) },
+  { key: "linkedin",  label: "LinkedIn",  Icon: Linkedin,      test: (l) => !!l.linkedin_url },
+];
+
+// Which day-bucket a lead's draft falls into (by when it was drafted). Undated leads
+// (no drafted_at) sort into "older" so they never vanish from an unfiltered view.
+function dayBucket(iso?: string | null): "today" | "yesterday" | "week" | "older" {
+  if (!iso) return "older";
+  const d = new Date(iso);
+  const startOf = (x: Date) => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
+  const days = Math.round((startOf(new Date()) - startOf(d)) / 86400000);
+  if (days <= 0) return "today";
+  if (days === 1) return "yesterday";
+  if (days <= 7) return "week";
+  return "older";
+}
+const DATE_FILTERS: { key: string; label: string }[] = [
+  { key: "today",     label: "Today" },
+  { key: "yesterday", label: "Yesterday" },
+  { key: "week",      label: "Last 7 days" },
+  { key: "older",     label: "Older" },
+];
+// "week" is inclusive of today+yesterday, so a lead counts for it if it's within 7 days.
+function matchesDate(l: TodayLead, key: string): boolean {
+  if (key === "all") return true;
+  const b = dayBucket(l.drafted_at);
+  if (key === "week") return b === "today" || b === "yesterday" || b === "week";
+  return b === key;
+}
+
 export default function TodayPage() {
   const qc = useQueryClient();
+  const [medium, setMedium] = useState<string>("all");
+  const [dateKey, setDateKey] = useState<string>("all");
   const today = useQuery({
     queryKey: ["today"],
     queryFn: () => api.get<{
@@ -607,9 +645,79 @@ export default function TodayPage() {
           No drafts waiting. Click <em>Run Today&apos;s Discovery</em> to find + draft today&apos;s leads (give it a minute, then refresh).
         </CardContent></Card>
       )}
-      <div className="space-y-4">
-        {today.data?.leads.map((l) => <LeadCard key={l.draft_id} lead={l} />)}
-      </div>
+
+      {(() => {
+        const leads = today.data?.leads ?? [];
+        if (leads.length === 0) return null;
+        const active = MEDIA.find((m) => m.key === medium);
+        // Counts for each dimension reflect the OTHER active filter, so a chip's number
+        // matches what you'd actually see after clicking it.
+        const byDate = leads.filter((l) => matchesDate(l, dateKey));
+        const byMedium = active ? leads.filter(active.test) : leads;
+        const filtered = leads.filter((l) => (!active || active.test(l)) && matchesDate(l, dateKey));
+        return (
+          <>
+            <div className="flex flex-wrap items-center gap-1.5">
+              <span className="inline-flex items-center gap-1 text-xs text-muted-foreground mr-1">
+                <Filter className="h-3.5 w-3.5" /> Reachable by:
+              </span>
+              <FilterChip label="All" Icon={Users} count={byDate.length}
+                          active={medium === "all"} onClick={() => setMedium("all")} />
+              {MEDIA.map((m) => {
+                const n = byDate.filter(m.test).length;
+                return (
+                  <FilterChip key={m.key} label={m.label} Icon={m.Icon} count={n}
+                              disabled={n === 0}
+                              active={medium === m.key} onClick={() => setMedium(m.key)} />
+                );
+              })}
+            </div>
+
+            <div className="flex flex-wrap items-center gap-1.5">
+              <span className="inline-flex items-center gap-1 text-xs text-muted-foreground mr-1">
+                <Clock className="h-3.5 w-3.5" /> Drafted:
+              </span>
+              <FilterChip label="Any date" Icon={Clock} count={byMedium.length}
+                          active={dateKey === "all"} onClick={() => setDateKey("all")} />
+              {DATE_FILTERS.map((d) => {
+                const n = byMedium.filter((l) => matchesDate(l, d.key)).length;
+                return (
+                  <FilterChip key={d.key} label={d.label} Icon={Clock} count={n}
+                              disabled={n === 0}
+                              active={dateKey === d.key} onClick={() => setDateKey(d.key)} />
+                );
+              })}
+            </div>
+
+            <div className="space-y-4">
+              {filtered.length === 0 ? (
+                <Card><CardContent className="py-8 text-center text-sm text-muted-foreground">
+                  No leads match these filters.{" "}
+                  <button className="text-brand-300 hover:underline"
+                          onClick={() => { setMedium("all"); setDateKey("all"); }}>Clear filters</button>
+                </CardContent></Card>
+              ) : (
+                filtered.map((l) => <LeadCard key={l.draft_id} lead={l} />)
+              )}
+            </div>
+          </>
+        );
+      })()}
     </div>
+  );
+}
+
+function FilterChip({ label, Icon, count, active, disabled, onClick }: {
+  label: string; Icon: any; count: number; active: boolean; disabled?: boolean; onClick: () => void;
+}) {
+  return (
+    <button onClick={onClick} disabled={disabled}
+            className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs transition-colors ${
+              active ? "border-brand-400/50 bg-brand-500/15 text-brand-200"
+              : disabled ? "border-white/5 text-muted-foreground/40 cursor-not-allowed"
+              : "border-white/10 text-muted-foreground hover:text-foreground hover:border-white/20"}`}>
+      <Icon className="h-3.5 w-3.5" /> {label}
+      <span className="tabular-nums opacity-70">{count}</span>
+    </button>
   );
 }

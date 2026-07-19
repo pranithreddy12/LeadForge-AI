@@ -85,6 +85,7 @@ def _lead_card(db: Session, co: Company, m: EmailMessage | None) -> dict:
         "draft_id": str(m.id) if m else None,
         "draft_status": m.status if m else None,   # 'draft' | 'sent' — so a sent lead's
                                                    # content is still visible on the page
+        "drafted_at": (m.created_at.isoformat() if m and m.created_at else None),
         "company_id": str(co.id),
         "company_name": co.name,
         "domain": co.domain,
