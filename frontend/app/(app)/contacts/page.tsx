@@ -2,7 +2,8 @@
 
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Search } from "lucide-react";
+import Link from "next/link";
+import { Search, Building2 } from "lucide-react";
 
 import { api } from "@/lib/api";
 import type { Contact, Page as PageT } from "@/lib/types";
@@ -22,6 +23,7 @@ export default function ContactsPage() {
     !q || c.name.toLowerCase().includes(q.toLowerCase())
        || (c.title || "").toLowerCase().includes(q.toLowerCase())
        || (c.email || "").toLowerCase().includes(q.toLowerCase())
+       || (c.company_name || "").toLowerCase().includes(q.toLowerCase())
   );
 
   return (
@@ -37,7 +39,7 @@ export default function ContactsPage() {
           <Input
             value={q}
             onChange={(e) => setQ(e.target.value)}
-            placeholder="Search by name, title, email…"
+            placeholder="Search by name, title, email, account…"
             className="pl-9 h-9 bg-card/40"
           />
         </div>
@@ -50,6 +52,7 @@ export default function ContactsPage() {
             <thead>
               <tr className="text-left text-xs text-muted-foreground border-b border-white/5">
                 <th className="py-2 px-4">Name</th>
+                <th>Account (spa)</th>
                 <th>Title</th>
                 <th>Influence</th>
                 <th>Buying power</th>
@@ -62,6 +65,15 @@ export default function ContactsPage() {
               {filtered.map(p => (
                 <tr key={p.id} className="border-b border-white/5 hover:bg-white/[0.02]">
                   <td className="py-2.5 px-4 font-medium">{p.name}</td>
+                  <td>
+                    {p.company_name ? (
+                      <Link href={`/leads/${p.company_id}`}
+                            className="inline-flex items-center gap-1.5 text-brand-300 hover:text-brand-200 hover:underline">
+                        <Building2 className="h-3.5 w-3.5 shrink-0 opacity-70" />
+                        <span className="truncate max-w-[200px]">{p.company_name}</span>
+                      </Link>
+                    ) : <span className="text-muted-foreground">—</span>}
+                  </td>
                   <td className="text-muted-foreground">{p.title}</td>
                   <td className="pr-4"><InfluenceBar score={p.influence_score} /></td>
                   <td><BuyingPowerBadge value={p.buying_power} /></td>
@@ -81,7 +93,7 @@ export default function ContactsPage() {
                 </tr>
               ))}
               {filtered.length === 0 && (
-                <tr><td colSpan={7} className="py-10 text-center text-sm text-muted-foreground">
+                <tr><td colSpan={8} className="py-10 text-center text-sm text-muted-foreground">
                   No contacts yet.
                 </td></tr>
               )}

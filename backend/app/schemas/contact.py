@@ -33,6 +33,7 @@ class ContactOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: uuid.UUID
     company_id: uuid.UUID
+    company_name: str | None = None
     name: str
     title: str | None
     seniority: str | None

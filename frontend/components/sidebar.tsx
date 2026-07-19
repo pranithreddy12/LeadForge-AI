@@ -5,7 +5,7 @@ import { usePathname } from "next/navigation";
 import {
   LayoutDashboard, Sparkles, Building2, Users, Activity, Target,
   Workflow as WorkflowIcon, MessageSquare, Settings, Send, CreditCard, Crosshair,
-  ListChecks, Inbox, Sun, ClipboardList, Database, MailCheck,
+  ListChecks, Inbox, Sun, ClipboardList, Database, MailCheck, PhoneOff,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -21,6 +21,7 @@ const nav = [
   { href: "/replies",       label: "Replies",       icon: Inbox },
   { href: "/pipeline",      label: "Pipeline",      icon: Send },
   { href: "/sent",          label: "Sent",          icon: MailCheck },
+  { href: "/invalid",       label: "Invalid #s",    icon: PhoneOff },
   { href: "/log",           label: "Outreach Log",  icon: ClipboardList },
   { href: "/crm",           label: "CRM",           icon: Target },
   { href: "/campaigns",     label: "Campaigns",     icon: Send },

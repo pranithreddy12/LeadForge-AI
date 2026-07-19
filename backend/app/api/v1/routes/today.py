@@ -102,6 +102,15 @@ def _lead_card(db: Session, co: Company, m: EmailMessage | None) -> dict:
         "dm_ar": (m.meta or {}).get("dm_ar") if m else None,
         "auto_reply_comeback": (m.meta or {}).get("auto_reply_comeback") if m else None,
         "edited": bool((m.meta or {}).get("edited")) if m else False,
+        # LinkedIn — only when the account actually has a LinkedIn presence. Seeded from
+        # the DM (or body) so there's an editable draft immediately; the user can tailor
+        # it and we persist their version in meta.linkedin_dm.
+        "linkedin_url": ((co.raw or {}).get("socials") or {}).get("linkedin"),
+        "linkedin_dm": (
+            (m.meta or {}).get("linkedin_dm")
+            or (m.meta or {}).get("dm")
+            or (m.body if m else None)
+        ) if (m and ((co.raw or {}).get("socials") or {}).get("linkedin")) else None,
         "wa_link": wa_link(places.get("phone_intl")
                            or normalize_phone(places.get("phone"))),
         "socials": (co.raw or {}).get("socials") or {},
@@ -360,6 +369,11 @@ def find_owner_email_now(company_id: uuid.UUID, db: Session = Depends(get_db),
 class DraftEdit(BaseModel):
     subject: str | None = None
     body: str | None = None
+    # Every channel variant is editable, not just the email. These live in message.meta.
+    dm: str | None = None                    # WhatsApp / generic DM
+    dm_ar: str | None = None                 # Arabic DM
+    auto_reply_comeback: str | None = None   # what to send if they auto-reply
+    linkedin_dm: str | None = None           # LinkedIn message
 
 
 @router.patch("/{company_id}/draft")
@@ -378,7 +392,13 @@ def edit_draft(company_id: uuid.UUID, payload: DraftEdit,
         m.subject = payload.subject.strip()[:300]
     if payload.body is not None:
         m.body = payload.body
-    m.meta = {**(m.meta or {}), "edited": True}
+    meta = {**(m.meta or {}), "edited": True}
+    # Persist any edited channel variant into meta (only fields that were sent).
+    for field in ("dm", "dm_ar", "auto_reply_comeback", "linkedin_dm"):
+        val = getattr(payload, field)
+        if val is not None:
+            meta[field] = val
+    m.meta = meta
     db.commit()
     return {"ok": True, "card": _lead_card(db, co, m)}
 
@@ -466,7 +486,7 @@ def lead_demo(company_id: uuid.UUID, db: Session = Depends(get_db),
 
 class ReplyIn(BaseModel):
     their_message: str
-    channel: str = "whatsapp"   # whatsapp | instagram | email
+    channel: str = "whatsapp"   # whatsapp | instagram | linkedin | email
 
 
 @router.post("/{company_id}/log-reply")
@@ -478,6 +498,7 @@ def log_reply(company_id: uuid.UUID, body: ReplyIn, db: Session = Depends(get_db
     poller: WhatsApp/Instagram replies never reach our webhooks, so you paste them."""
     from app.ai.outreach_engine import generate_suggested_reply
     from app.models.crm import CRMActivity
+    from app.services.settings_resolver import settings_row
     from app.services.whatsapp_inbound import _driving_signal
 
     co = db.get(Company, company_id)
@@ -486,13 +507,24 @@ def log_reply(company_id: uuid.UUID, body: ReplyIn, db: Session = Depends(get_db
     their = (body.their_message or "").strip()
     if not their:
         return {"ok": False, "reason": "empty", "detail": "Paste what they replied first."}
-    channel = body.channel if body.channel in ("whatsapp", "instagram", "email") else "whatsapp"
+    channel = body.channel if body.channel in ("whatsapp", "instagram", "linkedin", "email") else "whatsapp"
+
+    # Ground the reply in what WE actually sell + the message we last sent them, so the
+    # AI continues THIS thread instead of pitching cold again.
+    s = settings_row(db, org.id)
+    services = getattr(s, "outreach_services", None) if s else None
+    last = _latest_message(db, org.id, company_id)
+    our_last = None
+    if last is not None:
+        meta = last.meta or {}
+        our_last = meta.get("dm") or last.body or last.subject
 
     _mark_company_replied(db, org.id, company_id)     # stage -> replied, flip the message
 
     signal = _driving_signal(db, company_id)
     res = generate_suggested_reply(company={"name": co.name}, their_message=their,
-                                   signal=signal, channel=channel)
+                                   signal=signal, channel=channel,
+                                   services=services, our_last_message=our_last)
     suggested = None if res.get("_provider_error") else res.get("suggested_response")
 
     # Log the inbound + suggestion as a CRM activity so it also shows on /replies.
@@ -508,7 +540,7 @@ def log_reply(company_id: uuid.UUID, body: ReplyIn, db: Session = Depends(get_db
 
 
 class SentVia(BaseModel):
-    channel: str = "email"   # email | whatsapp | instagram
+    channel: str = "email"   # email | whatsapp | instagram | linkedin
 
 
 @router.post("/{company_id}/sent-via")
@@ -517,7 +549,7 @@ def mark_sent_via(company_id: uuid.UUID, body: SentVia, db: Session = Depends(ge
     """'I DM'd / messaged this lead myself on <channel>' — logs the real channel so the
     funnel reflects where outreach actually happens. Instagram and WhatsApp are manual
     by design (Meta bans cold-DM automation), so this is how they enter the pipeline."""
-    channel = body.channel if body.channel in ("email", "whatsapp", "instagram") else "email"
+    channel = body.channel if body.channel in ("email", "whatsapp", "instagram", "linkedin") else "email"
     co = db.get(Company, company_id)
     if not co or co.organization_id != org.id:
         raise NotFound("Company")
@@ -583,6 +615,70 @@ def skip_lead(company_id: uuid.UUID, body: SkipBody, db: Session = Depends(get_d
         channel="email", action="skipped", skip_reason=body.reason))
     db.commit()
     return {"ok": True, "company": co.name, "logged": "skipped", "reason": body.reason}
+
+
+@router.post("/{company_id}/flag-invalid-whatsapp")
+def flag_invalid_whatsapp(company_id: uuid.UUID, db: Session = Depends(get_db),
+                          org: Organization = Depends(current_org)):
+    """The lead's WhatsApp number is invalid/unreachable. Park it: flag it, take it off
+    the Today queue, and surface it on the Invalid Numbers page to revisit later (find
+    another number, or discard). Not an opt-out — the lead is fine, the number isn't."""
+    from sqlalchemy.orm.attributes import flag_modified
+    co = db.get(Company, company_id)
+    if not co or co.organization_id != org.id:
+        raise NotFound("Company")
+    co.raw = {**(co.raw or {}), "invalid_whatsapp": True}
+    flag_modified(co, "raw")
+    m = _draft_for_company(db, org.id, company_id)   # take it off Today
+    if m is not None:
+        m.status = "skipped"
+        m.meta = {**(m.meta or {}), "skip_reason": "invalid_whatsapp"}
+    db.commit()
+    return {"ok": True, "company": co.name}
+
+
+@router.post("/{company_id}/restore-number")
+def restore_number(company_id: uuid.UUID, db: Session = Depends(get_db),
+                   org: Organization = Depends(current_org)):
+    """Un-park a lead flagged invalid-WhatsApp: clear the flag and regenerate its draft
+    so it returns to Today (e.g. after you found a working number)."""
+    from sqlalchemy.orm.attributes import flag_modified
+    from app.workers.outreach import draft_outreach_for_company
+    co = db.get(Company, company_id)
+    if not co or co.organization_id != org.id:
+        raise NotFound("Company")
+    raw = dict(co.raw or {})
+    raw.pop("invalid_whatsapp", None)
+    co.raw = raw
+    flag_modified(co, "raw")
+    db.commit()
+    draft_outreach_for_company(str(org.id), str(company_id), channel="email", force=True)
+    return {"ok": True, "company": co.name}
+
+
+@router.get("/invalid-numbers")
+def invalid_numbers(db: Session = Depends(get_db), org: Organization = Depends(current_org)):
+    """Leads parked because their WhatsApp number is invalid — to revisit later."""
+    rows = db.execute(
+        select(Company).where(
+            Company.organization_id == org.id,
+            Company.raw["invalid_whatsapp"].astext == "true")
+        .order_by(Company.name)
+    ).scalars().all()
+    items = []
+    for co in rows:
+        places = (co.raw or {}).get("places") or {}
+        phone = places.get("phone")
+        sc = _latest_score(db, co.id)
+        items.append({
+            "company_id": str(co.id), "company_name": co.name,
+            "phone": phone,
+            "wa_link": wa_link(places.get("phone_intl") or normalize_phone(phone)),
+            "socials": (co.raw or {}).get("socials") or {},
+            "score": int(sc[0]) if sc and sc[0] is not None else None,
+            "grade": sc[1] if sc else None,
+        })
+    return {"count": len(items), "items": items}
 
 
 # ---- /log lives under the same router file but its own prefix ----

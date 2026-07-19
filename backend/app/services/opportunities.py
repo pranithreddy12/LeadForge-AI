@@ -6,8 +6,10 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.models.company import Company
+from app.models.contact import Contact
 from app.models.scoring import LeadScore
 from app.models.signal import Signal
+from app.services.local_scoring import suggest_local_opportunity
 
 
 def list_opportunities(db: Session, *, organization_id: uuid.UUID,
@@ -16,7 +18,11 @@ def list_opportunities(db: Session, *, organization_id: uuid.UUID,
     ranked by score descending. This is the intelligence view."""
     from app.services.leadpool import buyer_only
     from app.services.scoring import latest_score_ids_select
+    from app.services.settings_resolver import settings_row
     latest_ids = latest_score_ids_select(organization_id).subquery()
+
+    _s = settings_row(db, organization_id)
+    services = getattr(_s, "outreach_services", None) if _s else None
 
     rows = db.execute(
         select(Company, LeadScore)
@@ -43,6 +49,19 @@ def list_opportunities(db: Session, *, organization_id: uuid.UUID,
         top_kinds = [k for k, _ in sig_rows[:4]]
 
         opp = (score.raw or {}).get("opportunity") or {}
+        contact_title = score.suggested_contact_title or opp.get("suggested_contact_title")
+        offer = score.suggested_offer or opp.get("suggested_offer")
+        # Local leads never get an LLM opportunity brief, so these were empty on the card.
+        # Derive an honest recommendation from the REAL signals + our own service list.
+        if (score.raw or {}).get("local_fit") and not (contact_title and offer):
+            dm = db.execute(
+                select(Contact.name).where(
+                    Contact.company_id == company.id, Contact.name.ilike("Dr.%"))
+                .order_by(Contact.is_primary.desc()).limit(1)
+            ).scalar_one_or_none()
+            sug = suggest_local_opportunity(top_kinds, services, decision_maker=dm)
+            contact_title = contact_title or sug["suggested_contact_title"]
+            offer = offer or sug["suggested_offer"]
         out.append({
             "company_id": company.id,
             "company_name": company.name,
@@ -54,9 +73,8 @@ def list_opportunities(db: Session, *, organization_id: uuid.UUID,
             "probability": score.probability,
             "why_now": opp.get("why_now") or score.reasoning or [],
             "pain_points": opp.get("pain_points") or score.pain_points or [],
-            "suggested_contact_title": score.suggested_contact_title
-                or opp.get("suggested_contact_title"),
-            "suggested_offer": score.suggested_offer or opp.get("suggested_offer"),
+            "suggested_contact_title": contact_title,
+            "suggested_offer": offer,
             "signal_count": signal_count,
             "top_signal_kinds": top_kinds,
             "scored_at": score.created_at,

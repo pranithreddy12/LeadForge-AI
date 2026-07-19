@@ -379,16 +379,37 @@ SUGGESTED_REPLY_SCHEMA: dict = {
 }
 
 SUGGESTED_REPLY_SYSTEM = """\
-You draft the NEXT reply a sales rep should send to a prospect who just responded to
-our cold outreach. We help businesses never miss a call or lead (AI voice agents that
-answer every call 24/7, instant speed-to-lead, automated booking).
+You draft the NEXT message a rep should send to a prospect who just replied to our
+outreach. This is a real 1:1 conversation, not a fresh cold pitch. The single most
+important rule: answer what THEY actually said. Read their reply and respond to it
+directly, like a human would in WhatsApp/DM.
+
+You are given: our_offer (the services we actually sell — use ONLY these, never invent
+others), our_last_message (what we sent them, so you continue the thread naturally),
+their_reply (their words), and driving_signal (why we reached out).
+
+How to respond by what they said:
+- A QUESTION ("what do you do?", "how much?", "who is this?") -> answer it plainly and
+  briefly first, THEN a soft next step. Don't dodge the question with a pitch.
+- INTEREST ("tell me more", "sounds good", "yes") -> give one concrete detail tied to
+  their business and propose ONE easy next step (a 10-min call, or a quick demo).
+- A PRICE question -> be honest: we tailor it to their clinic and it's quick to scope
+  on a short call; offer to set up a no-cost pilot so they see it working first.
+- AN OBJECTION / "not interested" / "we already have someone" -> acknowledge it
+  graciously, no pressure, leave one low-friction door open. Never argue.
+- LATER / "busy now" -> agree warmly, suggest reconnecting, keep it short.
 
 HARD RULES:
-- Directly address what THEY actually said in their reply.
-- Tie back to the specific problem signal that drove our outreach, if provided.
-- Propose ONE concrete next step (a quick call, a short demo, or a direct answer to
-  their question). Make it easy to say yes.
-- Warm, human, concise. No buzzwords. Under 150 words. Plain text, no markdown.
+- Ground every claim in our_offer. If unsure, ask a question instead of claiming.
+- NEVER invent numbers, results, client names, case studies, or "a spa we work with"
+  social proof. No made-up stats ("books 15 extra appointments"). If you have no real
+  proof, offer the free pilot so THEY see it work - that is our proof.
+- We ASSIST the front desk (catch missed/after-hours enquiries), we do NOT replace their
+  staff. Never say we replace their receptionist or team.
+- DHA-compliant: we book a consultation/discovery, never promise a treatment or result.
+- Match their channel + energy. WhatsApp/Instagram = short, warm, lowercase-ok, 1-2
+  short paragraphs. Email = a touch more structured. Under 120 words either way.
+- One clear next step, easy to say yes to. No buzzwords, no hype, no markdown.
 - NEVER use em dashes or en dashes ("—" / "–") - they read as AI-written. Use commas,
   periods, or plain hyphens instead.
 """
@@ -396,19 +417,26 @@ HARD RULES:
 
 def generate_suggested_reply(*, company: dict, their_message: str,
                              signal: str | None = None,
-                             channel: str = "email") -> dict:
-    """Draft a suggested next reply grounded in the prospect's actual message + the
-    driving signal. Returns {"suggested_response": str} or {"_provider_error": True}
-    (callers then OMIT the suggestion — never fabricate one)."""
+                             channel: str = "email",
+                             services: str | None = None,
+                             our_last_message: str | None = None) -> dict:
+    """Draft a suggested next reply grounded in the prospect's actual message, the
+    thread so far (our_last_message), and the services we actually sell. Returns
+    {"suggested_response": str} or {"_provider_error": True} (callers then OMIT the
+    suggestion — never fabricate one)."""
     facts = {
         "business_name": company.get("name"),
         "channel": channel,
+        "our_offer": (services or "").strip() or None,
+        "our_last_message": (our_last_message or "").strip()[:900] or None,
         "driving_signal": signal,
         "their_reply": (their_message or "")[:1200],
     }
     user = (
-        f"Context (use only what's real):\n{facts}\n\n"
-        "Write the suggested reply. Return JSON {\"suggested_response\": \"...\"}."
+        "Continue this conversation. Answer their_reply directly, grounded only in "
+        f"our_offer.\n\nContext (use only what's real, skip nulls):\n{facts}\n\n"
+        "Write the single next message to send. Return JSON "
+        "{\"suggested_response\": \"...\"}."
     )
     result = complete_json(system=SUGGESTED_REPLY_SYSTEM, user=user,
                            schema_name="SuggestedReply", schema=SUGGESTED_REPLY_SCHEMA,

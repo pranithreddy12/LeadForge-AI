@@ -424,10 +424,6 @@ type LeadCard = {
   socials: Record<string, string>;
 };
 
-function copy(text: string, label: string) {
-  navigator.clipboard.writeText(text).then(() => toast.success(`${label} copied`));
-}
-
 function OutreachPanel({ companyId }: { companyId: string }) {
   const qc = useQueryClient();
   const card = useQuery({
@@ -502,41 +498,26 @@ function OutreachPanel({ companyId }: { companyId: string }) {
           )}
           {hasDraft && (
             <div className="rounded-lg border border-white/5 bg-white/[0.02] p-4 space-y-3">
-              <div className="flex items-center justify-between gap-2">
-                <div className="text-xs text-muted-foreground">Subject</div>
-                <div className="flex gap-1">
-                  <Button size="sm" variant="ghost" onClick={() => copy(d!.subject || "", "Subject")}>Copy subject</Button>
-                  <Button size="sm" variant="ghost" onClick={() => copy(d!.body || "", "Body")}>Copy body</Button>
-                </div>
-              </div>
+              <div className="text-xs text-muted-foreground">Subject</div>
               <div className="font-medium">{d!.subject}</div>
               <div className="text-sm whitespace-pre-wrap leading-relaxed border-t border-white/5 pt-3">{d!.body}</div>
             </div>
           )}
           {d?.dm && (
             <div className="rounded-lg border border-emerald-500/20 bg-emerald-500/5 p-4 space-y-2">
-              <div className="flex items-center justify-between">
-                <div className="text-[11px] uppercase tracking-wider text-emerald-300">WhatsApp / DM variant</div>
-                <Button size="sm" variant="ghost" onClick={() => copy(d.dm || "", "DM")}>Copy DM</Button>
-              </div>
+              <div className="text-[11px] uppercase tracking-wider text-emerald-300">WhatsApp / DM variant</div>
               <div className="text-sm whitespace-pre-wrap leading-relaxed">{d.dm}</div>
             </div>
           )}
           {d?.dm_ar && (
             <div className="rounded-lg border border-sky-500/20 bg-sky-500/5 p-4 space-y-2">
-              <div className="flex items-center justify-between">
-                <div className="text-[11px] uppercase tracking-wider text-sky-300">Arabic DM (العربية)</div>
-                <Button size="sm" variant="ghost" onClick={() => copy(d.dm_ar || "", "Arabic DM")}>Copy</Button>
-              </div>
+              <div className="text-[11px] uppercase tracking-wider text-sky-300">Arabic DM (العربية)</div>
               <div className="text-sm whitespace-pre-wrap leading-relaxed" dir="rtl" lang="ar">{d.dm_ar}</div>
             </div>
           )}
           {d?.auto_reply_comeback && (
             <div className="rounded-lg border border-amber-500/20 bg-amber-500/5 p-4 space-y-2">
-              <div className="flex items-center justify-between">
-                <div className="text-[11px] uppercase tracking-wider text-amber-300">If they auto-reply — send this back</div>
-                <Button size="sm" variant="ghost" onClick={() => copy(d.auto_reply_comeback || "", "Comeback")}>Copy</Button>
-              </div>
+              <div className="text-[11px] uppercase tracking-wider text-amber-300">If they auto-reply — send this back</div>
               <div className="text-sm whitespace-pre-wrap leading-relaxed">{d.auto_reply_comeback}</div>
             </div>
           )}

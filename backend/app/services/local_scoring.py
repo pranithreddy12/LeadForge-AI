@@ -48,6 +48,39 @@ def _is_mobile(phone: str | None) -> bool:
     return False   # unknown plan (incl. US/CA) -> do not claim
 
 
+def suggest_local_opportunity(signal_kinds: list[str] | None,
+                              services: str | None = None,
+                              *, decision_maker: str | None = None) -> dict:
+    """Who to reach + what to offer, for a local business. Grounded, not invented:
+    the target is the owner/manager (they decide, not the front desk), and the offer is
+    the seller's REAL primary service tied to the specific problem signal we detected.
+    Returns {"suggested_contact_title": str, "suggested_offer": str}."""
+    kinds = set(signal_kinds or [])
+
+    # Who: the buyer is the owner/manager. If we know the doctor/owner name, name them.
+    title = "Owner / Clinic Manager"
+    if decision_maker:
+        title = f"{decision_maker} (owner/decision-maker)"
+
+    # What: our real primary service (first configured), phrased to the problem we saw.
+    items = [s.strip() for s in (services or "").replace(";", ",").split(",") if s.strip()]
+    primary = items[0] if items else "AI receptionist"
+    if "no_online_booking" in kinds:
+        angle = "no online booking yet, so enquiries rely on calls/WhatsApp - capture and book those automatically"
+    elif "missed_calls_complaint" in kinds:
+        angle = "reviews mention missed calls - answer and book them so none slip"
+    elif "slow_response_complaint" in kinds:
+        angle = "reviews mention slow responses - reply instantly and book, 24/7"
+    elif "limited_hours" in kinds:
+        angle = "closed part of the week - catch after-hours WhatsApp enquiries and book them"
+    elif "low_rating" in kinds:
+        angle = "recover missed enquiries and nudge happy clients for reviews"
+    else:
+        angle = "answer WhatsApp and missed calls 24/7 and book consultations automatically"
+    offer = f"Free 7-day pilot of {primary}: {angle}."
+    return {"suggested_contact_title": title, "suggested_offer": offer}
+
+
 def _grade(score: int) -> str:
     if score >= 90:
         return "A+"

@@ -3,8 +3,8 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  Activity, Ban, Check, Clock, Copy, Facebook, Instagram, Linkedin, Loader2,
-  MessageCircle, MessageSquare, Music2, Pencil, PlayCircle, RefreshCw, Send, SkipForward, UserSearch, Youtube,
+  Activity, Ban, Check, Clock, Facebook, Instagram, Linkedin, Loader2,
+  Mail, MessageCircle, MessageSquare, Music2, Pencil, PhoneOff, PlayCircle, RefreshCw, Send, SkipForward, UserSearch, Youtube,
 } from "lucide-react";
 import { toast } from "sonner";
 import Link from "next/link";
@@ -28,21 +28,6 @@ function copyText(text: string) {
   navigator.clipboard.writeText(text).then(
     () => toast.success("DM copied — paste it in the chat"),
     () => toast.error("Couldn't copy — copy the DM manually"),
-  );
-}
-
-function CopyBtn({ text, label }: { text: string; label: string }) {
-  const [done, setDone] = useState(false);
-  return (
-    <Button
-      size="sm" variant="outline"
-      onClick={async () => {
-        try { await navigator.clipboard.writeText(text); setDone(true); toast.success(`${label} copied`); setTimeout(() => setDone(false), 1500); }
-        catch { toast.error("Copy failed"); }
-      }}
-    >
-      {done ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />} {label}
-    </Button>
   );
 }
 
@@ -74,9 +59,58 @@ function SocialPills({ socials }: { socials?: Record<string, string> }) {
   );
 }
 
+/** One channel-message block (WhatsApp DM, Arabic DM, comeback, LinkedIn) that can be
+ *  edited in place and saved to the draft. Every variant is editable, not just email. */
+function VariantBlock({
+  companyId, field, value, title, boxCls, labelCls, dir, lang, footer,
+}: {
+  companyId: string;
+  field: "dm" | "dm_ar" | "auto_reply_comeback" | "linkedin_dm";
+  value: string; title: string; boxCls: string; labelCls: string;
+  dir?: "rtl"; lang?: string; footer?: React.ReactNode;
+}) {
+  const qc = useQueryClient();
+  const [editing, setEditing] = useState(false);
+  const [text, setText] = useState(value);
+  const dirty = text !== value;
+  const save = useMutation({
+    mutationFn: () => api.patch(`/today/${companyId}/draft`, { [field]: text }),
+    onSuccess: () => { toast.success("Saved"); setEditing(false); qc.invalidateQueries({ queryKey: ["today"] }); },
+    onError: (e: any) => toast.error(e?.message || "Couldn't save"),
+  });
+  return (
+    <div className={`rounded-md border p-3 space-y-2 ${boxCls}`}>
+      <div className="flex items-center justify-between gap-2">
+        <div className={`text-[11px] uppercase tracking-wide ${labelCls}`}>{title}</div>
+        {!editing ? (
+          <button onClick={() => { setText(value); setEditing(true); }}
+                  className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground">
+            <Pencil className="h-3 w-3" /> Edit
+          </button>
+        ) : (
+          <div className="flex items-center gap-1">
+            <Button size="sm" variant="ghost" onClick={() => { setEditing(false); setText(value); }}>Cancel</Button>
+            <Button size="sm" variant="default" disabled={!dirty || save.isPending} onClick={() => save.mutate()}>
+              {save.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : "Save"}
+            </Button>
+          </div>
+        )}
+      </div>
+      {!editing ? (
+        <p className="text-sm whitespace-pre-wrap" dir={dir} lang={lang}>{value}</p>
+      ) : (
+        <textarea value={text} onChange={(e) => setText(e.target.value)} rows={4} dir={dir} lang={lang}
+                  className="w-full resize-y rounded-md border border-white/10 bg-background px-2.5 py-2 text-sm outline-none focus:border-brand-400" />
+      )}
+      {footer}
+    </div>
+  );
+}
+
 function LeadCard({ lead }: { lead: TodayLead }) {
   const qc = useQueryClient();
   const [skipOpen, setSkipOpen] = useState(false);
+  const [sentOpen, setSentOpen] = useState(false);
   const [editing, setEditing] = useState(false);
   const [subj, setSubj] = useState(lead.subject);
   const [body, setBody] = useState(lead.body);
@@ -106,6 +140,15 @@ function LeadCard({ lead }: { lead: TodayLead }) {
   const [replyOpen, setReplyOpen] = useState(false);
   const [replyText, setReplyText] = useState("");
   const [suggested, setSuggested] = useState<string | null>(null);
+  // Which channel they replied on — drives the tone of the drafted response. Default to
+  // the most likely channel for this lead, but let the user correct it.
+  const replyChannels = [
+    lead.wa_link && ["whatsapp", "WhatsApp"],
+    lead.ig_dm_link && ["instagram", "Instagram"],
+    lead.linkedin_url && ["linkedin", "LinkedIn"],
+    lead.to && ["email", "Email"],
+  ].filter(Boolean) as [string, string][];
+  const [replyChannel, setReplyChannel] = useState<string>(replyChannels[0]?.[0] || "whatsapp");
   const logReply = useMutation({
     mutationFn: (channel: string) =>
       api.post<{ suggested_response: string | null; detail?: string }>(
@@ -125,14 +168,21 @@ function LeadCard({ lead }: { lead: TodayLead }) {
     onError: (e: any) => toast.error(e?.message || "Lookup failed"),
   });
 
-  const sent = useMutation({
-    mutationFn: () => api.post(`/today/${lead.company_id}/sent`),
-    onSuccess: () => { toast.success("Marked as sent"); invalidate(); },
+  // Mark sent via the channel you ACTUALLY used, so the Sent page + funnel are honest
+  // (the old button hardcoded email). Uses the sent-via endpoint per channel.
+  const markSent = useMutation({
+    mutationFn: (channel: string) => api.post(`/today/${lead.company_id}/sent-via`, { channel }),
+    onSuccess: (_d: any, channel: string) => { toast.success(`Marked sent via ${channel}`); setSentOpen(false); invalidate(); },
     onError: (e: any) => toast.error(e?.message || "Failed"),
   });
   const skip = useMutation({
     mutationFn: (reason: string) => api.post(`/today/${lead.company_id}/skip`, { reason }),
     onSuccess: () => { toast("Skipped"); invalidate(); },
+    onError: (e: any) => toast.error(e?.message || "Failed"),
+  });
+  const flagInvalid = useMutation({
+    mutationFn: () => api.post(`/today/${lead.company_id}/flag-invalid-whatsapp`),
+    onSuccess: () => { toast("Parked — see Invalid Numbers"); invalidate(); },
     onError: (e: any) => toast.error(e?.message || "Failed"),
   });
   const optout = useMutation({
@@ -255,10 +305,10 @@ function LeadCard({ lead }: { lead: TodayLead }) {
         </div>
 
         {lead.dm && (
-          <div className="rounded-md border border-emerald-500/20 bg-emerald-500/[0.06] p-3 space-y-1">
-            <div className="text-[11px] uppercase tracking-wide text-emerald-300">WhatsApp / DM variant</div>
-            <p className="text-sm whitespace-pre-wrap">{lead.dm}</p>
-          </div>
+          <VariantBlock companyId={lead.company_id} field="dm" value={lead.dm}
+                        title="WhatsApp / DM variant"
+                        boxCls="border-emerald-500/20 bg-emerald-500/[0.06]"
+                        labelCls="text-emerald-300" />
         )}
 
         {lead.ig_dm_link && (
@@ -288,17 +338,36 @@ function LeadCard({ lead }: { lead: TodayLead }) {
         )}
 
         {lead.dm_ar && (
-          <div className="rounded-md border border-sky-500/20 bg-sky-500/[0.06] p-3 space-y-1">
-            <div className="text-[11px] uppercase tracking-wide text-sky-300">Arabic DM (العربية)</div>
-            <p className="text-sm whitespace-pre-wrap" dir="rtl" lang="ar">{lead.dm_ar}</p>
-          </div>
+          <VariantBlock companyId={lead.company_id} field="dm_ar" value={lead.dm_ar}
+                        title="Arabic DM (العربية)" dir="rtl" lang="ar"
+                        boxCls="border-sky-500/20 bg-sky-500/[0.06]"
+                        labelCls="text-sky-300" />
+        )}
+
+        {lead.linkedin_dm && (
+          <VariantBlock companyId={lead.company_id} field="linkedin_dm" value={lead.linkedin_dm}
+                        title="LinkedIn message"
+                        boxCls="border-blue-500/20 bg-blue-500/[0.06]"
+                        labelCls="text-blue-300"
+                        footer={
+                          <div className="flex flex-wrap items-center gap-2 pt-1">
+                            <a href={lead.linkedin_url || "#"} target="_blank" rel="noopener noreferrer"
+                               className="inline-flex items-center gap-1.5 rounded-md border border-blue-500/30 bg-blue-500/10 px-2.5 py-1 text-xs text-blue-200 hover:bg-blue-500/20 transition-colors">
+                              <Linkedin className="h-3.5 w-3.5" /> Open LinkedIn
+                            </a>
+                            <Button size="sm" variant="outline" disabled={sentVia.isPending}
+                                    onClick={() => sentVia.mutate("linkedin")}>
+                              {sentVia.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />} I messaged them
+                            </Button>
+                          </div>
+                        } />
         )}
 
         {lead.auto_reply_comeback && (
-          <div className="rounded-md border border-amber-500/20 bg-amber-500/[0.06] p-3 space-y-1">
-            <div className="text-[11px] uppercase tracking-wide text-amber-300">If they auto-reply (send this back)</div>
-            <p className="text-sm whitespace-pre-wrap">{lead.auto_reply_comeback}</p>
-          </div>
+          <VariantBlock companyId={lead.company_id} field="auto_reply_comeback" value={lead.auto_reply_comeback}
+                        title="If they auto-reply (send this back)"
+                        boxCls="border-amber-500/20 bg-amber-500/[0.06]"
+                        labelCls="text-amber-300" />
         )}
 
         <div className="flex flex-wrap items-center gap-2">
@@ -306,12 +375,6 @@ function LeadCard({ lead }: { lead: TodayLead }) {
                   title="Open a WhatsApp-style demo of this clinic's AI receptionist — screenshot it into the chat">
             {demo.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <PlayCircle className="h-3.5 w-3.5" />} Demo
           </Button>
-          <CopyBtn text={lead.subject} label="Copy subject" />
-          <CopyBtn text={lead.body} label="Copy body" />
-          {lead.dm && <CopyBtn text={lead.dm} label="Copy DM" />}
-          {lead.dm_ar && <CopyBtn text={lead.dm_ar} label="Copy Arabic DM" />}
-          {lead.auto_reply_comeback && <CopyBtn text={lead.auto_reply_comeback} label="Copy comeback" />}
-          {lead.to && <CopyBtn text={lead.to} label="Copy email" />}
           <div className="flex-1" />
           {lead.to && (
             <Button size="sm" variant="glow" disabled={sendEmail.isPending}
@@ -320,10 +383,32 @@ function LeadCard({ lead }: { lead: TodayLead }) {
               {sendEmail.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />} Send email
             </Button>
           )}
-          <Button size="sm" variant="default" disabled={sent.isPending} onClick={() => sent.mutate()}
-                  title="I sent this myself (e.g. via WhatsApp) — just log it, don't send from the app">
-            {sent.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />} Mark as sent
-          </Button>
+          {!sentOpen ? (
+            <Button size="sm" variant="default" onClick={() => setSentOpen(true)}
+                    title="I sent this myself — pick which channel you used so it's tracked correctly.">
+              <Check className="h-3.5 w-3.5" /> Mark as sent
+            </Button>
+          ) : (
+            <div className="inline-flex items-center gap-1 rounded-md border border-white/10 bg-background px-1.5 py-1">
+              <span className="text-[11px] text-muted-foreground pl-1">Sent via:</span>
+              <Button size="sm" variant="ghost" className="h-7 px-2 text-brand-300" disabled={markSent.isPending} onClick={() => markSent.mutate("email")}>
+                <Mail className="h-3.5 w-3.5" /> Email
+              </Button>
+              <Button size="sm" variant="ghost" className="h-7 px-2 text-emerald-300" disabled={markSent.isPending} onClick={() => markSent.mutate("whatsapp")}>
+                <MessageCircle className="h-3.5 w-3.5" /> WhatsApp
+              </Button>
+              <Button size="sm" variant="ghost" className="h-7 px-2 text-fuchsia-300" disabled={markSent.isPending} onClick={() => markSent.mutate("instagram")}>
+                <Instagram className="h-3.5 w-3.5" /> Instagram
+              </Button>
+              {lead.linkedin_url && (
+                <Button size="sm" variant="ghost" className="h-7 px-2 text-blue-300" disabled={markSent.isPending} onClick={() => markSent.mutate("linkedin")}>
+                  <Linkedin className="h-3.5 w-3.5" /> LinkedIn
+                </Button>
+              )}
+              {markSent.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+              <Button size="sm" variant="ghost" className="h-7 px-1.5 text-muted-foreground" onClick={() => setSentOpen(false)}>✕</Button>
+            </div>
+          )}
           {!skipOpen ? (
             <>
               <Button size="sm" variant="outline" className="text-emerald-300 hover:text-emerald-200"
@@ -333,6 +418,12 @@ function LeadCard({ lead }: { lead: TodayLead }) {
               </Button>
               <Button size="sm" variant="outline" onClick={() => setSkipOpen(true)}>
                 <SkipForward className="h-3.5 w-3.5" /> Skip
+              </Button>
+              <Button size="sm" variant="outline" className="text-amber-400 hover:text-amber-300"
+                      disabled={flagInvalid.isPending}
+                      title="The WhatsApp number is invalid/unreachable. Park it on the Invalid Numbers page to revisit later."
+                      onClick={() => flagInvalid.mutate()}>
+                {flagInvalid.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <PhoneOff className="h-3.5 w-3.5" />} Bad number
               </Button>
               <Button size="sm" variant="ghost" className="text-red-400 hover:text-red-300"
                       disabled={optout.isPending}
@@ -352,23 +443,35 @@ function LeadCard({ lead }: { lead: TodayLead }) {
 
         {replyOpen && (
           <div className="rounded-md border border-emerald-500/25 bg-emerald-500/[0.05] p-3 space-y-2">
-            <div className="text-[11px] uppercase tracking-wide text-emerald-300">What did they reply?</div>
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="text-[11px] uppercase tracking-wide text-emerald-300">What did they reply?</div>
+              {replyChannels.length > 1 && (
+                <div className="inline-flex items-center gap-1">
+                  <span className="text-[11px] text-muted-foreground">on:</span>
+                  {replyChannels.map(([v, label]) => (
+                    <button key={v} onClick={() => setReplyChannel(v)}
+                            className={`rounded px-1.5 py-0.5 text-[11px] border transition-colors ${
+                              replyChannel === v ? "border-emerald-400/50 bg-emerald-500/15 text-emerald-200"
+                                                 : "border-white/10 text-muted-foreground hover:text-foreground"}`}>
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
             <textarea value={replyText} onChange={(e) => setReplyText(e.target.value)} rows={3}
                       placeholder="Paste the client's reply here…"
                       className="w-full resize-y rounded-md border border-white/10 bg-background px-2.5 py-2 text-sm outline-none focus:border-emerald-400" />
             <div className="flex items-center gap-2">
               <Button size="sm" variant="default" disabled={!replyText.trim() || logReply.isPending}
-                      onClick={() => logReply.mutate(lead.ig_dm_link ? "instagram" : lead.wa_link ? "whatsapp" : "email")}>
+                      onClick={() => logReply.mutate(replyChannel)}>
                 {logReply.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />} Draft my response
               </Button>
               <span className="text-[11px] text-muted-foreground">Marks the lead as replied.</span>
             </div>
             {suggested && (
               <div className="rounded-md border border-brand-500/25 bg-brand-500/[0.06] p-3 space-y-1">
-                <div className="flex items-center justify-between">
-                  <div className="text-[11px] uppercase tracking-wide text-brand-300">Suggested reply (edit before sending)</div>
-                  <CopyBtn text={suggested} label="Copy reply" />
-                </div>
+                <div className="text-[11px] uppercase tracking-wide text-brand-300">Suggested reply (edit before sending)</div>
                 <p className="text-sm whitespace-pre-wrap">{suggested}</p>
               </div>
             )}

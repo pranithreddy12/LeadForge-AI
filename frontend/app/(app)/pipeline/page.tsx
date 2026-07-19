@@ -1,8 +1,7 @@
 "use client";
 
-import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Check, Copy, Loader2, RefreshCw } from "lucide-react";
+import { Check, Loader2, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 import Link from "next/link";
 
@@ -11,18 +10,6 @@ import type { PipelineLead } from "@/lib/types";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-
-function CopyBtn({ text, label }: { text: string; label: string }) {
-  const [done, setDone] = useState(false);
-  return (
-    <Button size="sm" variant="outline" onClick={async () => {
-      try { await navigator.clipboard.writeText(text); setDone(true); toast.success(`${label} copied`); setTimeout(() => setDone(false), 1500); }
-      catch { toast.error("Copy failed"); }
-    }}>
-      {done ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />} {label}
-    </Button>
-  );
-}
 
 function LeadRow({ lead }: { lead: PipelineLead }) {
   const qc = useQueryClient();
@@ -56,8 +43,6 @@ function LeadRow({ lead }: { lead: PipelineLead }) {
             <div className="text-sm"><span className="text-muted-foreground">Subject:</span> {f.subject}</div>
             <p className="text-sm whitespace-pre-wrap pt-1 border-t border-white/5">{f.body}</p>
             <div className="flex flex-wrap items-center gap-2 pt-1">
-              <CopyBtn text={f.subject} label="Copy subject" />
-              <CopyBtn text={f.body} label="Copy body" />
               <div className="flex-1" />
               <Button size="sm" disabled={sent.isPending} onClick={() => sent.mutate(f.draft_id)}>
                 {sent.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />} Mark sent

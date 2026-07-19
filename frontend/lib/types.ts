@@ -107,6 +107,8 @@ export interface TodayLead {
   dm?: string | null;
   dm_ar?: string | null;
   auto_reply_comeback?: string | null;
+  linkedin_url?: string | null;
+  linkedin_dm?: string | null;
   edited?: boolean;
   wa_link?: string | null;
   ig_handle?: string | null;
@@ -169,6 +171,7 @@ export interface WorkflowRun {
 export interface Contact {
   id: ID;
   company_id: ID;
+  company_name?: string | null;
   name: string;
   title?: string | null;
   seniority?: string | null;

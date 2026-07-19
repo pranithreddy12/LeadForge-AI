@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
-import { Loader2, Mail, MessageCircle, Instagram, CheckCircle2, Reply, Copy, Send } from "lucide-react";
+import { Loader2, Mail, MessageCircle, Instagram, CheckCircle2, Reply, Send } from "lucide-react";
 import { toast } from "sonner";
 
 import { api } from "@/lib/api";
@@ -94,12 +94,7 @@ function SentRow({ it }: { it: SentItem }) {
           </Button>
           {suggested && (
             <div className="rounded-md border border-brand-500/25 bg-brand-500/[0.06] p-3 space-y-1">
-              <div className="flex items-center justify-between">
-                <div className="text-[11px] uppercase tracking-wide text-brand-300">Suggested reply (edit before sending)</div>
-                <Button size="sm" variant="ghost" onClick={() => { navigator.clipboard.writeText(suggested); toast.success("Copied"); }}>
-                  <Copy className="h-3 w-3" /> Copy
-                </Button>
-              </div>
+              <div className="text-[11px] uppercase tracking-wide text-brand-300">Suggested reply (edit before sending)</div>
               <p className="text-sm whitespace-pre-wrap">{suggested}</p>
             </div>
           )}

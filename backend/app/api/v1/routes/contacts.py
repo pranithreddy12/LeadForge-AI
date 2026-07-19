@@ -43,7 +43,15 @@ def list_contacts(
         stmt.order_by(Contact.influence_score.desc(), Contact.created_at.desc())
             .offset((page - 1) * page_size).limit(page_size)
     ).scalars().all()
-    return Page(items=rows, page=page, page_size=page_size, total=total,
+    # Attach the account (spa) name so the UI can show — and link to — whose contact
+    # each row is. One batched lookup, no N+1.
+    cids = {r.company_id for r in rows if r.company_id}
+    names = dict(db.execute(
+        select(Company.id, Company.name).where(Company.id.in_(cids))
+    ).all()) if cids else {}
+    items = [ContactOut.model_validate(r).model_copy(
+        update={"company_name": names.get(r.company_id)}) for r in rows]
+    return Page(items=items, page=page, page_size=page_size, total=total,
                 has_next=total > page * page_size)
 
 
