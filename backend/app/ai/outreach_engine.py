@@ -59,7 +59,8 @@ HARD RULES:
    "never miss a lead", "instant lead response", "24/7 booking", "boost your revenue",
    "guaranteed", "act now", "limited time", "free trial", "revolutionary",
    "cutting-edge", "game-changer". Say the idea in fresh, plain words.
-3. SHORT: 3-5 sentences, under 90 words total. A busy owner skims.
+3. SHORT: 3-5 sentences, under 90 words total (up to ~110 words in the EMAIL body when
+   you include the other-services line from the OTHER SERVICES section). A busy owner skims.
 4. ONE soft call-to-action, phrased as a low-friction question ("worth a quick look?",
    "want me to send a 30-sec example?"). NOT "book a call".
 5. No links, no attachments, no pricing in the first email (protects deliverability).
@@ -69,6 +70,9 @@ HARD RULES:
 8. If contact_name is empty, open with "Hi there," or straight into the first line.
    NEVER write "Hi ," or "Hi {name}".
 9. Vary sentence structure and wording every time. No template feel.
+9b. LOCATION = the city= value only. A business named "My London Skin Clinic" in
+    city=Dubai is a DUBAI clinic - never call it a London clinic. Never infer a city
+    from the business name.
 10. QUESTION-FIRST. Make them FEEL the gap before you pitch. Open (or nearly open)
     with a short, specific question tied to their signal - e.g. "when you're closed
     Fridays, where do the booking messages go?" or "when the phone's busy, do website
@@ -127,6 +131,15 @@ CONSULTATION, never "books the treatment" or sells treatment slots - UAE health
 regulators (DHA) require a consultation before any procedure, and clinic owners
 know it. "books the consultation straight into your calendar" reads as compliant
 and informed; "books the treatment" reads as a liability.
+
+OTHER SERVICES (when other_services is provided): the offer is NOT just the receptionist.
+In the EMAIL body, MERGE 1-2 of the other services INTO the free-pilot line (rule 13) as a
+short parenthetical - do NOT add a separate sentence (that overflows the word budget and
+gets dropped). e.g. "I'm setting up the AI receptionist (and the WhatsApp booking + review
+follow-ups if useful) free for a few Dubai clinics to build case studies." Name at most
+TWO services, never the full menu (a list reads as generic agency spam). Only services
+from other_services - never invent one. Vary which two you pick each time. The DM stays
+single-hook (no services line).
 
 Also produce a "dm" field: the same idea as an Instagram/WhatsApp DM, ~40 words, even
 more casual (email is the weaker channel for these businesses). The dm MUST be
@@ -425,6 +438,23 @@ def _humanize_variants(result: dict) -> dict:
     return result
 
 
+def _services_ps(services: str | None, body: str) -> str | None:
+    """A short 'P.S. we also do X' line from the seller's OTHER services (the first
+    one is assumed to be the primary offer already in the body, so it's dropped).
+    Returns None when nothing to add or the extras are already mentioned."""
+    items = [s.strip() for s in (services or "").replace(";", ",").split(",") if s.strip()]
+    extras = items[1:] if len(items) > 1 else []   # skip the primary (receptionist)
+    if not extras:
+        return None
+    low = body.lower()
+    extras = [e for e in extras if e.lower() not in low]   # don't repeat what's in-body
+    if not extras:
+        return None
+    listed = extras[0] if len(extras) == 1 else (
+        ", ".join(extras[:-1]) + " and " + extras[-1])
+    return f"P.S. We also set up {listed} if any of that would help."
+
+
 def generate_outreach(
     *,
     company: dict,
@@ -440,6 +470,7 @@ def generate_outreach(
     greeting_name: str | None = None,
     market_fact: str | None = None,
     language: str = "en",
+    services: str | None = None,
 ) -> dict:
     """Generate `variants` outreach drafts grounded in real signals. When `local`, use
     the local-business path (cites real Google Places facts, tone-aware)."""
@@ -478,12 +509,13 @@ def generate_outreach(
         ar_line = (_AR_DM_INSTRUCTION + " ") if bilingual else ""
         ret_shape = ('{"subject":...,"body":...,"dm":...,"dm_ar":...}' if bilingual
                      else '{"subject":...,"body":...,"dm":...}')
+        services_line = (f"other_services={services}\n" if (services or "").strip() else "")
         user = (
             f"{prefix}business_name={company.get('name')}\n"
             f"contact_name={greeting_name or ''}\n"
             f"qualifying_signal={qualifying_signal}\n"
             f"city={city}\n"
-            f"{facts_line}\n"
+            f"{facts_line}{services_line}\n"
             "Write the email + dm. You may weave in AT MOST ONE of the optional_real_facts "
             f"if it makes the message feel more personal. {ar_line}"
             f"Return JSON {ret_shape}."
@@ -494,9 +526,18 @@ def generate_outreach(
                                temperature=0.6)
         if not isinstance(result, dict) or result.get("_provider_error"):
             return {"variants": [], "_provider_error": True}
+        body = humanize(result.get("body", ""))
+        # A deterministic P.S. reliably conveys the broader offering without eating the
+        # opener's word budget (the inline line kept getting dropped at ~90 words). Only
+        # appended when the seller configured other services, and only if the model
+        # didn't already work them in. P.S. lines read well and stay honest (real
+        # services only). The DM stays single-hook — no footer.
+        svc = _services_ps(services, body)
+        if svc:
+            body = f"{body}\n\n{svc}"
         return {
             "variants": [{"subject": humanize(result.get("subject", "")),
-                          "body": humanize(result.get("body", ""))}],
+                          "body": body}],
             "dm": humanize(result.get("dm", "")),
             **({"dm_ar": humanize(result.get("dm_ar", ""))}
                if bilingual and result.get("dm_ar") else {}),

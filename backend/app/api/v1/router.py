@@ -21,6 +21,7 @@ from app.api.v1.routes import (
     today,
     optout,
     data_export,
+    sent,
 )
 
 api_router = APIRouter()
@@ -46,3 +47,4 @@ api_router.include_router(today.log_router)
 api_router.include_router(today.pipeline_router)
 api_router.include_router(optout.router)
 api_router.include_router(data_export.router)
+api_router.include_router(sent.router)

@@ -81,6 +81,7 @@ def draft_outreach_for_company(organization_id: str, company_id: str,
             greeting_name=greeting_name,
             market_fact=market_fact,
             language=(getattr(s, "draft_language", None) or "en") if s else "en",
+            services=(getattr(s, "outreach_services", None) if s else None),
         )
         variants = raw.get("variants") or []
         if not variants:

@@ -41,6 +41,7 @@ type SettingsData = {
   outreach_send_mode: "manual" | "automated";
   booking_link: string | null;
   draft_language: "en" | "en+ar";
+  outreach_services: string | null;
   max_emails_per_day: number;
   max_emails_per_run: number;
   contact_find_hunter: boolean;
@@ -129,7 +130,7 @@ const EMPTY: SettingsData = {
   discovery_mode: "b2b", target_business_types: [], target_locations: [],
   search_radius_miles: 25, min_reviews: 10, max_results_per_run: 20,
   icp_name: "", employee_min: null, employee_max: null, target_industries: [], target_geography: [],
-  outreach_mode: ["email"], outreach_tone: "professional", outreach_send_mode: "manual", booking_link: "", draft_language: "en", max_emails_per_day: 50, max_emails_per_run: 25,
+  outreach_mode: ["email"], outreach_tone: "professional", outreach_send_mode: "manual", booking_link: "", draft_language: "en", outreach_services: "", max_emails_per_day: 50, max_emails_per_run: 25,
   contact_find_hunter: true, contact_find_scrape: true, contact_find_linkedin: true, validate_emails: true,
   filter_min_score: 65, filter_enforce_icp_size: true,
   whatsapp_webhook_url: "",
@@ -178,7 +179,7 @@ export default function SettingsPage() {
       target_industries: f.target_industries, target_geography: f.target_geography,
       outreach_mode: f.outreach_mode, outreach_tone: f.outreach_tone,
       outreach_send_mode: f.outreach_send_mode, booking_link: f.booking_link ?? "",
-      draft_language: f.draft_language,
+      draft_language: f.draft_language, outreach_services: f.outreach_services ?? "",
       max_emails_per_day: f.max_emails_per_day, max_emails_per_run: f.max_emails_per_run,
       contact_find_hunter: f.contact_find_hunter, contact_find_scrape: f.contact_find_scrape,
       contact_find_linkedin: f.contact_find_linkedin, validate_emails: f.validate_emails,
@@ -314,6 +315,10 @@ export default function SettingsPage() {
               </Field>
               <Field label="Booking link" hint="Calendly/Cal.com/etc. Injected into every draft's CTA. If empty, drafts ask for a reply instead — never a 'book a slot' with no link.">
                 <Input value={f.booking_link ?? ""} onChange={(e) => set({ booking_link: e.target.value })} placeholder="https://cal.com/you/15min (optional)" />
+              </Field>
+              <Field label="Other services" hint="Comma-separated. The FIRST is your primary offer (the email's hook); the rest become a short P.S. line — 'We also set up X, Y…'. Only list what you genuinely deliver.">
+                <Input value={f.outreach_services ?? ""} onChange={(e) => set({ outreach_services: e.target.value })}
+                       placeholder="AI receptionist, WhatsApp booking automation, review management, missed-call text-back" />
               </Field>
               <Separator />
               <Field label="Draft language" hint="English + Arabic adds a natural Arabic version of the WhatsApp/DM message to every draft (UAE/GCC: Arabic-first owners reply more).">

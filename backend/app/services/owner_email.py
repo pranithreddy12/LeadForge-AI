@@ -31,13 +31,47 @@ _HUNTER_TRUST = 70   # Hunter score at/above which we trust the finder result ou
 
 
 def _split_name(name: str) -> tuple[str, str] | None:
-    """('Dr. Ahsan Ullah') -> ('ahsan', 'ullah'). Drops titles, keeps first + last."""
-    parts = [p for p in re.split(r"\s+", re.sub(r"[^A-Za-z\s'-]", " ", name or "")) if p]
+    """('Dr. Ahsan Ullah') -> ('ahsan', 'ullah'). Drops titles + parentheticals,
+    keeps first + last."""
+    # Drop parenthetical suffixes like "(main line)" BEFORE parsing — otherwise
+    # "Medrose Medical Center (main line)" becomes first=medrose / last=line and
+    # burns a Hunter credit on a query that can never resolve.
+    cleaned = re.sub(r"\([^)]*\)", " ", name or "")
+    parts = [p for p in re.split(r"\s+", re.sub(r"[^A-Za-z\s'-]", " ", cleaned)) if p]
     parts = [p for p in parts if p.lower().strip(".") not in
              ("dr", "mr", "mrs", "ms", "prof", "doctor", "the")]
     if len(parts) < 2:
         return None
     return parts[0].lower(), parts[-1].lower()
+
+
+# Words that betray a business/inbox name rather than a person, so we never spend a
+# Hunter credit trying to find "Medrose Medical Center"'s personal email.
+_NOT_A_PERSON = (
+    "clinic", "center", "centre", "spa", "medical", "aesthetic", "aesthetics",
+    "laser", "skin", "derma", "dermatology", "beauty", "wellness", "hospital",
+    "polyclinic", "healthcare", "health", "cosmetic", "surgery", "dental",
+    "line", "main", "reception", "front", "desk", "office", "team", "llc",
+    "group", "co", "ltd", "inc", "hotel", "resort", "salon", "lounge", "studio",
+)
+
+
+def _is_person_name(name: str | None, company_name: str | None = None) -> bool:
+    """True only if `name` reads like a real individual (two proper words, none of
+    them business/inbox words, and not just the company name). This is the gate that
+    stops the finder from querying Hunter with '{Business} (main line)'."""
+    split = _split_name(name or "")
+    if not split:
+        return False
+    first, last = split
+    if any(w in _NOT_A_PERSON for w in (first, last)):
+        return False
+    # If both name-words also appear in the company name, it's the brand, not a person.
+    comp = re.sub(r"[^a-z ]", " ", (company_name or "").lower())
+    comp_words = set(comp.split())
+    if first in comp_words and last in comp_words:
+        return False
+    return True
 
 
 def _patterns(first: str, last: str, domain: str) -> list[str]:
@@ -60,17 +94,26 @@ def find_owner_email(db: Session, company: Company) -> dict:
     if not domain:
         return {"found": False, "reason": "no_domain"}
 
-    # The owner's name: a named contact first, else scrape the site.
-    named = db.execute(
+    # The owner's name must be a REAL PERSON — the first named contact is often the
+    # "{Business} (main line)" phone pseudo-contact, and querying Hunter with that
+    # burns a credit on a business name that can never resolve. Take the first
+    # contact whose name passes the person gate; else scrape the site for a Dr./owner.
+    name = None
+    for c in db.execute(
         select(Contact).where(Contact.company_id == company.id,
-                              Contact.name.is_not(None)).limit(1)
-    ).scalar_one_or_none()
-    name = named.name if named else None
+                              Contact.name.is_not(None))
+    ).scalars():
+        if _is_person_name(c.name, company.name):
+            name = c.name
+            break
     if not name:
         from app.services.scraper import scrape_decision_makers
-        names = scrape_decision_makers(domain)
-        name = names[0] if names else None
+        for n in scrape_decision_makers(domain):
+            if _is_person_name(n, company.name):
+                name = n
+                break
     if not name:
+        # No real person name -> do NOT call Hunter (saves the credit).
         return {"found": False, "reason": "no_owner_name"}
     split = _split_name(name)
     if not split:

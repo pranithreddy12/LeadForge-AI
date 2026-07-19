@@ -81,3 +81,7 @@ class Settings(Base, UUIDPk, Timestamps):
 
     # ---- Contact enrichment ----
     hunter_api_key_enc: Mapped[str | None] = mapped_column(Text)                  # encrypted
+    # The seller's OTHER services — woven into the opener as one soft "and more" line.
+    outreach_services: Mapped[str | None] = mapped_column(
+        String(500),
+        default="AI receptionist, WhatsApp booking automation, review management, missed-call text-back")

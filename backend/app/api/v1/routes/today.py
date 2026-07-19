@@ -283,6 +283,56 @@ def mark_sent(company_id: uuid.UUID, db: Session = Depends(get_db),
     return {"ok": True, "company": co.name, "logged": "sent"}
 
 
+@router.post("/enrich-owner-emails")
+def enrich_owner_emails(db: Session = Depends(get_db), org: Organization = Depends(current_org)):
+    """Batch: turn every qualified lead's scraped owner NAME into a verified
+    decision-maker email. Runs the owner-email finder across the pool, skipping leads
+    that already have a person-level address. Requires a Hunter or NeverBounce key —
+    without one it reports needs_key rather than persisting an unverified guess."""
+    from app.services.contacts import _email_quality
+    from app.services.email_validation import _has_real_key
+    from app.services.owner_email import find_owner_email
+    from app.services.settings_resolver import resolve_credential
+    from app.models.contact import Contact
+
+    # A REAL key, not the demo placeholder — mirror the finder's own check
+    # (hunter.py rejects keys ending in "xxx" or shorter than 20 chars) so we don't
+    # promise results a placeholder key can't deliver.
+    _hk = (resolve_credential(db, org.id, "hunter_api_key") or "").strip()
+    has_key = (bool(_hk) and not _hk.endswith("xxx") and len(_hk) >= 20) or _has_real_key()
+    leads = db.execute(
+        select(Company).where(Company.organization_id == org.id,
+                              Company.pipeline_stage.in_(("qualified", "contacted")),
+                              Company.domain.is_not(None))
+    ).scalars().all()
+    scanned = found = already = 0
+    for co in leads:
+        # Skip leads that already have a person-level (non-front-desk) email.
+        best = max((_email_quality(c.email) for c in db.execute(
+            select(Contact).where(Contact.company_id == co.id,
+                                  Contact.email.is_not(None))).scalars() if c.email),
+            default=0)
+        if best >= 2:
+            already += 1
+            continue
+        scanned += 1
+        if not has_key:
+            continue
+        try:
+            if find_owner_email(db, co).get("found"):
+                found += 1
+        except Exception:
+            pass
+    return {
+        "found": found, "scanned": scanned, "already_had": already,
+        "needs_key": not has_key,
+        "detail": ("Add a Hunter or NeverBounce key in Settings — the names are ready, "
+                   "we just can't verify an address without it."
+                   if not has_key else
+                   f"Found {found} decision-maker email(s) across {scanned} leads."),
+    }
+
+
 @router.post("/{company_id}/find-owner-email")
 def find_owner_email_now(company_id: uuid.UUID, db: Session = Depends(get_db),
                          org: Organization = Depends(current_org)):
@@ -412,6 +462,49 @@ def lead_demo(company_id: uuid.UUID, db: Session = Depends(get_db),
     html = build_demo_html(co, kinds, sender_name=sender,
                            doctor=_decision_maker(db, co.id))
     return {"company": co.name, "html": html}
+
+
+class ReplyIn(BaseModel):
+    their_message: str
+    channel: str = "whatsapp"   # whatsapp | instagram | email
+
+
+@router.post("/{company_id}/log-reply")
+def log_reply(company_id: uuid.UUID, body: ReplyIn, db: Session = Depends(get_db),
+              org: Organization = Depends(current_org)):
+    """A lead replied to your DM/message. Record it, advance the lead to 'replied',
+    and draft the NEXT reply with AI — grounded in what they actually said + the
+    signal that qualified them. This is the manual-channel counterpart to the inbox
+    poller: WhatsApp/Instagram replies never reach our webhooks, so you paste them."""
+    from app.ai.outreach_engine import generate_suggested_reply
+    from app.models.crm import CRMActivity
+    from app.services.whatsapp_inbound import _driving_signal
+
+    co = db.get(Company, company_id)
+    if not co or co.organization_id != org.id:
+        raise NotFound("Company")
+    their = (body.their_message or "").strip()
+    if not their:
+        return {"ok": False, "reason": "empty", "detail": "Paste what they replied first."}
+    channel = body.channel if body.channel in ("whatsapp", "instagram", "email") else "whatsapp"
+
+    _mark_company_replied(db, org.id, company_id)     # stage -> replied, flip the message
+
+    signal = _driving_signal(db, company_id)
+    res = generate_suggested_reply(company={"name": co.name}, their_message=their,
+                                   signal=signal, channel=channel)
+    suggested = None if res.get("_provider_error") else res.get("suggested_response")
+
+    # Log the inbound + suggestion as a CRM activity so it also shows on /replies.
+    db.add(CRMActivity(
+        organization_id=org.id, company_id=co.id, kind=channel,
+        body=f"Reply received ({channel}): {their[:280]}",
+        payload={"direction": "inbound", "channel": channel, "reply": their[:1200],
+                 "suggested_response": suggested, "manual_logged": True}))
+    db.commit()
+    return {"ok": True, "company": co.name, "channel": channel,
+            "suggested_response": suggested,
+            "detail": None if suggested else "Reply saved. AI draft unavailable right now — reply in your own words."}
 
 
 class SentVia(BaseModel):

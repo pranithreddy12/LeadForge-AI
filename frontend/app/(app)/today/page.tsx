@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Activity, Ban, Check, Clock, Copy, Facebook, Instagram, Linkedin, Loader2,
-  MessageCircle, Music2, Pencil, PlayCircle, RefreshCw, Send, SkipForward, UserSearch, Youtube,
+  MessageCircle, MessageSquare, Music2, Pencil, PlayCircle, RefreshCw, Send, SkipForward, UserSearch, Youtube,
 } from "lucide-react";
 import { toast } from "sonner";
 import Link from "next/link";
@@ -102,6 +102,19 @@ function LeadCard({ lead }: { lead: TodayLead }) {
     mutationFn: (channel: string) => api.post(`/today/${lead.company_id}/sent-via`, { channel }),
     onSuccess: (_d: any, channel: string) => { toast.success(`Logged — ${channel} outreach sent`); invalidate(); },
     onError: (e: any) => toast.error(e?.message || "Couldn't log"),
+  });
+  const [replyOpen, setReplyOpen] = useState(false);
+  const [replyText, setReplyText] = useState("");
+  const [suggested, setSuggested] = useState<string | null>(null);
+  const logReply = useMutation({
+    mutationFn: (channel: string) =>
+      api.post<{ suggested_response: string | null; detail?: string }>(
+        `/today/${lead.company_id}/log-reply`, { their_message: replyText, channel }),
+    onSuccess: (d: any) => {
+      setSuggested(d.suggested_response || null);
+      toast.success(d.suggested_response ? "Reply logged — AI drafted your response" : (d.detail || "Reply logged"));
+    },
+    onError: (e: any) => toast.error(e?.message || "Failed to log reply"),
   });
   const findOwner = useMutation({
     mutationFn: () => api.post<{ found: boolean; email?: string; detail?: string }>(`/today/${lead.company_id}/find-owner-email`),
@@ -313,6 +326,11 @@ function LeadCard({ lead }: { lead: TodayLead }) {
           </Button>
           {!skipOpen ? (
             <>
+              <Button size="sm" variant="outline" className="text-emerald-300 hover:text-emerald-200"
+                      onClick={() => { setReplyOpen((v) => !v); setSuggested(null); }}
+                      title="They replied to your DM/email — paste it and get an AI-drafted response.">
+                <MessageSquare className="h-3.5 w-3.5" /> They replied
+              </Button>
               <Button size="sm" variant="outline" onClick={() => setSkipOpen(true)}>
                 <SkipForward className="h-3.5 w-3.5" /> Skip
               </Button>
@@ -331,6 +349,31 @@ function LeadCard({ lead }: { lead: TodayLead }) {
             </div>
           )}
         </div>
+
+        {replyOpen && (
+          <div className="rounded-md border border-emerald-500/25 bg-emerald-500/[0.05] p-3 space-y-2">
+            <div className="text-[11px] uppercase tracking-wide text-emerald-300">What did they reply?</div>
+            <textarea value={replyText} onChange={(e) => setReplyText(e.target.value)} rows={3}
+                      placeholder="Paste the client's reply here…"
+                      className="w-full resize-y rounded-md border border-white/10 bg-background px-2.5 py-2 text-sm outline-none focus:border-emerald-400" />
+            <div className="flex items-center gap-2">
+              <Button size="sm" variant="default" disabled={!replyText.trim() || logReply.isPending}
+                      onClick={() => logReply.mutate(lead.ig_dm_link ? "instagram" : lead.wa_link ? "whatsapp" : "email")}>
+                {logReply.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />} Draft my response
+              </Button>
+              <span className="text-[11px] text-muted-foreground">Marks the lead as replied.</span>
+            </div>
+            {suggested && (
+              <div className="rounded-md border border-brand-500/25 bg-brand-500/[0.06] p-3 space-y-1">
+                <div className="flex items-center justify-between">
+                  <div className="text-[11px] uppercase tracking-wide text-brand-300">Suggested reply (edit before sending)</div>
+                  <CopyBtn text={suggested} label="Copy reply" />
+                </div>
+                <p className="text-sm whitespace-pre-wrap">{suggested}</p>
+              </div>
+            )}
+          </div>
+        )}
       </CardContent>
     </Card>
   );
@@ -370,6 +413,14 @@ export default function TodayPage() {
     onSuccess: () => toast.success("Re-scan started — fresh signals & scores land in a minute (also runs weekly on its own)."),
     onError: (e: any) => toast.error(e?.message || "Failed to start re-scan"),
   });
+  const enrichOwners = useMutation({
+    mutationFn: () => api.post<{ found: number; scanned: number; needs_key: boolean; detail: string }>("/today/enrich-owner-emails"),
+    onSuccess: (d: any) => {
+      if (d.needs_key) toast(d.detail, { icon: "🔑", duration: 6000 });
+      else { toast.success(d.detail); qc.invalidateQueries({ queryKey: ["today"] }); }
+    },
+    onError: (e: any) => toast.error(e?.message || "Failed"),
+  });
 
   return (
     <div className="space-y-5">
@@ -382,6 +433,11 @@ export default function TodayPage() {
           </p>
         </div>
         <div className="flex items-center gap-2">
+          <Button variant="outline" disabled={enrichOwners.isPending} onClick={() => enrichOwners.mutate()}
+                  title="Find decision-maker emails for every qualified lead from their scraped owner name (needs a Hunter/NeverBounce key; verified only, never a guess).">
+            {enrichOwners.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <UserSearch className="h-4 w-4" />}
+            Find decision-maker emails
+          </Button>
           <Button variant="outline" disabled={rescan.isPending} onClick={() => rescan.mutate()}
                   title="Refresh Places facts on every uncontacted lead: new signals surface, stale ones retire, changed leads re-score. Sends nothing.">
             {rescan.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
