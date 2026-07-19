@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
-import { Loader2, Mail, MessageCircle, Instagram, CheckCircle2, Reply, Send } from "lucide-react";
+import { Loader2, Mail, MessageCircle, Instagram, Linkedin, Phone, CheckCircle2, Reply, Send } from "lucide-react";
 import { toast } from "sonner";
 
 import { api } from "@/lib/api";
@@ -25,6 +25,8 @@ const CHANNEL = {
   email: { icon: Mail, label: "Email", cls: "text-brand-300 border-brand-500/30 bg-brand-500/10" },
   whatsapp: { icon: MessageCircle, label: "WhatsApp", cls: "text-emerald-300 border-emerald-500/30 bg-emerald-500/10" },
   instagram: { icon: Instagram, label: "Instagram", cls: "text-fuchsia-300 border-fuchsia-500/30 bg-fuchsia-500/10" },
+  linkedin: { icon: Linkedin, label: "LinkedIn", cls: "text-blue-300 border-blue-500/30 bg-blue-500/10" },
+  phone: { icon: Phone, label: "Phone", cls: "text-sky-300 border-sky-500/30 bg-sky-500/10" },
 } as const;
 
 /** "Today" / "Yesterday" / "Mon, 14 Jul" bucket label for a timestamp. */
