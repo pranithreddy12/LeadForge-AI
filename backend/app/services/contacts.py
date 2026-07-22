@@ -285,6 +285,7 @@ def _make_contact(company: Company, *, name: str, title: str,
                   is_primary: bool = False,
                   personas: list[str] | None = None) -> Contact:
     from app.services.contact_intelligence import compute_influence
+    from app.services.owner_email import _is_person_name
     first, _, last = name.partition(" ")
     seniority = _seniority_for(title)
     department = _department_for(title)
@@ -292,6 +293,15 @@ def _make_contact(company: Company, *, name: str, title: str,
         title=title, seniority=seniority, department=department,
         buyer_personas=personas,
     )
+    # A front-desk mailbox ("info@"), an email-as-name, or the "{business} (main line)"
+    # phone pseudo-contact is NOT a decision-maker — never let one outrank a real named
+    # person in the influence sort. Capped low so the top-influence contact (and the
+    # draft recipient) is the actual person whenever we have one. Also cap when the email
+    # itself is a generic front-desk address, regardless of the display name.
+    is_person = ("@" not in (name or "")) and _is_person_name(name, company.name)
+    generic_mailbox = bool(email) and _email_quality(email) == 0
+    if not is_person or generic_mailbox:
+        influence = min(influence, 10)
     return Contact(
         organization_id=company.organization_id,
         company_id=company.id,

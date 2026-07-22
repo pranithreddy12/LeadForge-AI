@@ -1,7 +1,7 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Check, Loader2, RefreshCw } from "lucide-react";
+import { Check, Loader2, RefreshCw, Send } from "lucide-react";
 import { toast } from "sonner";
 import Link from "next/link";
 
@@ -17,6 +17,14 @@ function LeadRow({ lead }: { lead: PipelineLead }) {
     mutationFn: (draftId: string) => api.post(`/pipeline/${draftId}/sent`),
     onSuccess: () => { toast.success("Follow-up marked sent"); qc.invalidateQueries({ queryKey: ["pipeline"] }); },
     onError: (e: any) => toast.error(e?.message || "Failed"),
+  });
+  const send = useMutation({
+    mutationFn: (draftId: string) => api.post<{ sent: boolean; to?: string; reason?: string; detail?: string }>(`/pipeline/${draftId}/send-email`),
+    onSuccess: (d: any) => {
+      if (d.sent) { toast.success(`Sent to ${d.to}`); qc.invalidateQueries({ queryKey: ["pipeline"] }); }
+      else toast.error(d.detail || d.reason || "Could not send");
+    },
+    onError: (e: any) => toast.error(e?.message || "Send failed"),
   });
 
   return (
@@ -44,7 +52,15 @@ function LeadRow({ lead }: { lead: PipelineLead }) {
             <p className="text-sm whitespace-pre-wrap pt-1 border-t border-white/5">{f.body}</p>
             <div className="flex flex-wrap items-center gap-2 pt-1">
               <div className="flex-1" />
-              <Button size="sm" disabled={sent.isPending} onClick={() => sent.mutate(f.draft_id)}>
+              {f.to && (
+                <Button size="sm" variant="glow" disabled={send.isPending}
+                        title={`Send this follow-up now to ${f.to} from your configured Gmail`}
+                        onClick={() => { if (confirm(`Send this follow-up now to ${f.to}?\n\nThis sends a real email from your configured account. It can't be unsent.`)) send.mutate(f.draft_id); }}>
+                  {send.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />} Send email
+                </Button>
+              )}
+              <Button size="sm" variant="outline" disabled={sent.isPending} onClick={() => sent.mutate(f.draft_id)}
+                      title="I sent this follow-up myself (or on another channel) — just take it off the queue.">
                 {sent.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />} Mark sent
               </Button>
             </div>

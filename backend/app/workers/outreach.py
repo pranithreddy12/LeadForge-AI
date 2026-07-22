@@ -39,16 +39,23 @@ def draft_outreach_for_company(organization_id: str, company_id: str,
         if reason and not force:
             log.info("outreach_suppressed", company=str(company.id), reason=reason)
             return {"created": 0, "suppressed": reason}
-        # Prefer a contact that actually HAS an email (else the send bounces) — pick
-        # the highest-influence emailable one; fall back to any contact for the draft.
-        contact = db.execute(
+        # Address the draft to the BEST real recipient: among contacts that actually have
+        # an email, rank by email quality (a named person's mailbox beats a front-desk
+        # info@) then by influence, so the mail goes to the top decision-maker we can
+        # reach. Fall back to any contact when none has an email.
+        from app.services.contacts import _email_quality
+        emailable = db.execute(
             select(Contact).where(Contact.company_id == company.id,
                                   Contact.email.is_not(None))
-            .order_by(Contact.influence_score.desc().nullslast()).limit(1)
-        ).scalar_one_or_none() or db.execute(
-            select(Contact).where(Contact.company_id == company.id)
-            .order_by(Contact.is_primary.desc(), Contact.created_at.desc()).limit(1)
-        ).scalar_one_or_none()
+        ).scalars().all()
+        contact = (max(emailable,
+                       key=lambda c: (_email_quality(c.email), c.influence_score or 0))
+                   if emailable else
+                   db.execute(
+                       select(Contact).where(Contact.company_id == company.id)
+                       .order_by(Contact.is_primary.desc(), Contact.created_at.desc())
+                       .limit(1)
+                   ).scalar_one_or_none())
 
         icp = db.get(ICP, company.icp_id) if company.icp_id else None
         # Named decision-maker (Dr./owner scraped from About/Team) drives the greeting.

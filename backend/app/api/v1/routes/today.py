@@ -393,6 +393,27 @@ def find_owner_email_now(company_id: uuid.UUID, db: Session = Depends(get_db),
             "detail": hints.get(res.get("reason"), "No owner email found.")}
 
 
+@router.post("/{company_id}/find-owner-linkedin")
+def find_owner_linkedin_now(company_id: uuid.UUID, db: Session = Depends(get_db),
+                            org: Organization = Depends(current_org)):
+    """Find this owner's LinkedIn via a Google search of '{business} {city} owner
+    linkedin', disambiguated by business + city so we never attach a wrong-town namesake.
+    On a confident match, adds them as a top contact (with the profile URL) so the
+    LinkedIn draft targets the real owner. Manual DM only — LinkedIn bans auto-outreach."""
+    from app.services.owner_linkedin import attach_owner_linkedin
+    co = db.get(Company, company_id)
+    if not co or co.organization_id != org.id:
+        raise NotFound("Company")
+    res = attach_owner_linkedin(db, co)
+    if res.get("found"):
+        return {"found": True, "name": res.get("name"),
+                "linkedin_url": res.get("linkedin_url"),
+                "card": _lead_card(db, co, _draft_for_company(db, org.id, company_id))}
+    return {"found": False,
+            "detail": "No confident owner match on LinkedIn — try their name on Google, "
+                      "or the search key may be out of credits."}
+
+
 class DraftEdit(BaseModel):
     subject: str | None = None
     body: str | None = None
@@ -867,3 +888,50 @@ def followup_sent(draft_id: uuid.UUID, db: Session = Depends(get_db),
         action="sent", sent_by_me=True))
     db.commit()
     return {"ok": True, "step": m.step}
+
+
+@pipeline_router.post("/{draft_id}/send-email")
+def send_followup_now(draft_id: uuid.UUID, db: Session = Depends(get_db),
+                      org: Organization = Depends(current_org)):
+    """Send THIS follow-up draft via the configured Gmail, right now — the Pipeline
+    counterpart to the Today 'Send email' button. One follow-up at a time (never bulk),
+    with the same boundary guards: Gmail configured, lead not suppressed, a real recipient
+    with valid MX, and the daily cap respected."""
+    from app.services.email_sender import (daily_cap_remaining, is_configured,
+                                           send_email_message, suppression_reason)
+    m = db.get(EmailMessage, draft_id)
+    if not m or m.organization_id != org.id:
+        raise NotFound("Draft")
+    if m.status != "draft":
+        return {"sent": False, "reason": "not_a_draft",
+                "detail": "This follow-up isn't a pending draft."}
+    if not is_configured():
+        return {"sent": False, "reason": "gmail_not_configured",
+                "detail": "Add a Gmail address + app password in Settings first."}
+    co = db.get(Company, m.company_id) if m.company_id else None
+    if co is None:
+        return {"sent": False, "reason": "no_company", "detail": "Lead not found."}
+    reason = suppression_reason(db, co)
+    if reason:
+        return {"sent": False, "reason": "suppressed", "detail": reason}
+    to_addr = _recipient(db, m)
+    if not to_addr:
+        return {"sent": False, "reason": "no_recipient_email",
+                "detail": "No email address for this lead — reach them on WhatsApp."}
+    if not mx_ok(to_addr):
+        return {"sent": False, "reason": "bad_mx",
+                "detail": f"{to_addr} has no valid mail server (MX) — it would bounce."}
+    if daily_cap_remaining(db, org.id) <= 0:
+        return {"sent": False, "reason": "daily_cap_reached",
+                "detail": "You've hit today's send cap. Continue tomorrow."}
+
+    result = send_email_message(db, m)   # marks sent / bounced + stores Message-ID
+    if not result.get("sent"):
+        return {"sent": False, "reason": result.get("reason", "send_failed"),
+                "detail": result.get("reason")}
+    db.add(ManualOutreachLog(
+        organization_id=org.id, company_id=co.id, company_name=co.name,
+        channel="email", action="sent", sent_by_me=True,
+        notes=f"follow-up #{max(1, m.step - 1)} sent from app to {result.get('to')}"))
+    db.commit()
+    return {"sent": True, "to": result.get("to"), "company": co.name, "step": m.step}

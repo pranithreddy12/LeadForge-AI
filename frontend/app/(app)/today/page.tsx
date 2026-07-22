@@ -171,6 +171,14 @@ function LeadCard({ lead }: { lead: TodayLead }) {
     },
     onError: (e: any) => toast.error(e?.message || "Lookup failed"),
   });
+  const findOwnerLi = useMutation({
+    mutationFn: () => api.post<{ found: boolean; name?: string; linkedin_url?: string; detail?: string }>(`/today/${lead.company_id}/find-owner-linkedin`),
+    onSuccess: (d: any) => {
+      if (d.found) { toast.success(`Owner on LinkedIn: ${d.name}`); invalidate(); }
+      else toast(d.detail || "No confident owner match", { icon: "ℹ️" });
+    },
+    onError: (e: any) => toast.error(e?.message || "Lookup failed"),
+  });
 
   // Mark sent via the channel you ACTUALLY used, so the Sent page + funnel are honest
   // (the old button hardcoded email). Uses the sent-via endpoint per channel.
@@ -378,6 +386,11 @@ function LeadCard({ lead }: { lead: TodayLead }) {
           <Button size="sm" variant="outline" disabled={demo.isPending} onClick={() => demo.mutate()}
                   title="Open a WhatsApp-style demo of this clinic's AI receptionist — screenshot it into the chat">
             {demo.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <PlayCircle className="h-3.5 w-3.5" />} Demo
+          </Button>
+          <Button size="sm" variant="outline" className="text-blue-300 hover:text-blue-200"
+                  disabled={findOwnerLi.isPending} onClick={() => findOwnerLi.mutate()}
+                  title="Google-search this business's owner on LinkedIn (matched by name + city), and add them as a contact to DM.">
+            {findOwnerLi.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Linkedin className="h-3.5 w-3.5" />} Find owner (LinkedIn)
           </Button>
           <div className="flex-1" />
           {lead.to && (
