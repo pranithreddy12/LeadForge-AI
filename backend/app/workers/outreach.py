@@ -179,6 +179,7 @@ def draft_followups_for_org(db, organization_id) -> dict:
                 signals=[_row(x) for x in signals], channel="email",
                 tone=(s.outreach_tone if s else "concise"), local=is_local,
                 follow_up=step - 1, booking_link=(s.booking_link if s else None),
+                portfolio_link=(getattr(s, "portfolio_link", None) if s else None),
                 greeting_name=(dm.name if dm else None),
             )
             variants = (raw or {}).get("variants") or []

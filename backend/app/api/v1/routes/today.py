@@ -540,18 +540,28 @@ def log_reply(company_id: uuid.UUID, body: ReplyIn, db: Session = Depends(get_db
     # AI continues THIS thread instead of pitching cold again.
     s = settings_row(db, org.id)
     services = getattr(s, "outreach_services", None) if s else None
+    portfolio = (getattr(s, "portfolio_link", None) or getattr(s, "booking_link", None)) if s else None
     last = _latest_message(db, org.id, company_id)
     our_last = None
     if last is not None:
         meta = last.meta or {}
         our_last = meta.get("dm") or last.body or last.subject
+    lead_name = _decision_maker(db, company_id)   # named owner/doctor, drives the greeting
+    # Quote in the lead's local currency: UAE -> AED, US metros -> USD, India -> INR.
+    loc = (_location_label(co) or "")
+    _US = {"Dallas", "Fort Worth", "Plano", "Irving", "Arlington", "Frisco", "McKinney",
+           "New York", "Las Vegas", "Houston", "Austin", "San Antonio", "Los Angeles",
+           "Miami", "Chicago"}
+    currency = "USD" if loc in _US else "AED"
 
     _mark_company_replied(db, org.id, company_id)     # stage -> replied, flip the message
 
     signal = _driving_signal(db, company_id)
     res = generate_suggested_reply(company={"name": co.name}, their_message=their,
                                    signal=signal, channel=channel,
-                                   services=services, our_last_message=our_last)
+                                   services=services, our_last_message=our_last,
+                                   lead_name=lead_name, portfolio_link=portfolio,
+                                   currency=currency)
     suggested = None if res.get("_provider_error") else res.get("suggested_response")
 
     # Log the inbound + suggestion as a CRM activity so it also shows on /replies.

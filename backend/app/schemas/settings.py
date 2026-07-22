@@ -40,6 +40,7 @@ class SettingsOut(BaseModel):
     outreach_tone: str = "professional"
     outreach_send_mode: str = "manual"   # manual (draft only) | automated (workflow sends)
     booking_link: str | None = None
+    portfolio_link: str | None = None    # examples link for follow-ups + reply drafts
     draft_language: str = "en"           # en | en+ar (adds an Arabic DM variant)
     outreach_services: str | None = None  # other services for the soft "and more" line
     max_emails_per_day: int = 50
@@ -77,6 +78,7 @@ class SettingsUpdate(BaseModel):
     outreach_tone: Literal["professional", "friendly", "direct"] = "professional"
     outreach_send_mode: Literal["manual", "automated"] = "manual"
     booking_link: str | None = None
+    portfolio_link: str | None = None
     draft_language: Literal["en", "en+ar"] = "en"
     outreach_services: str | None = Field(None, max_length=500)
     max_emails_per_day: int = Field(50, ge=0, le=2000)

@@ -89,18 +89,17 @@ HARD RULES:
     "practices like yours", or to cite any client, result, testimonial, or customer
     count. NEVER imply a track record in their industry. You may describe what the
     system DOES; you may NOT claim who it has done it for.
-13. THE OFFER IS A FREE PILOT (risk reversal + honest scarcity). The sender is new to
-    this vertical and is openly building case studies. Say so plainly - it disarms,
-    and it is TRUE. The ask: set it up FREE for a few {city} clinics in exchange for
-    honest feedback / a testimonial if it works. Zero risk for them, proof for the
-    sender. Phrase it fresh each time, e.g. "I'm setting this up free for a few {city}
-    clinics to build case studies - no cost to you, and a testimonial for me if it
-    actually works." NEVER invent a deadline or fake urgency; the scarcity (a few
-    slots) is real, so state it plainly and without pressure. On a FIRST touch the
-    pilot IS the call-to-action - use it, not a generic "want a quick look?". Without
-    a case study or a free trial there is no reason for a stranger to reply, so the
-    email/dm is incomplete if the free pilot is missing. (On later follow-ups you may
-    reference it more briefly instead of restating it in full.)
+13. FIRST PERSON. Write as "I", never "we" - this is one person (a solo engineer), not
+    a company. "I set up", "I built", "mine would've", never "we"/"our team"/"ours".
+14. THE OFFER IS A SHORT PAID PILOT - but NOT in the cold message. I am new to this
+    vertical and keep the entry small: a short paid pilot (about a week) to prove it on
+    their real enquiries before any bigger commitment. NEVER say "free", "no cost", or
+    "free trial" anywhere - that is not the offer. And do NOT quote a price or pitch the
+    paid pilot in a cold first touch: a stranger will not agree to pay in a first DM, and
+    the cold message's only job is to earn a reply. So on FIRST touch the CTA is the soft
+    question (rule 4) or an offer to show a 30-second example - the paid pilot is
+    introduced later, once they reply and show interest. Do not promise anything for free
+    to get the reply.
 
 SUBJECT: short (2-6 words), sentence case, curiosity-driven, specific to them. Reference
 their signal or name. NO product names, NO "never miss", NO "24/7", NO colon-heavy salesy
@@ -116,9 +115,10 @@ you have not looked hard enough at the lead - use their strongest real fact inst
 
 BODY (your own words each time): (1) their specific signal / a genuine brief nod, as a
 QUESTION where possible (rule 10); (2) the problem it creates (a missed/after-hours
-enquiry that goes to a competitor), plainly; (3) what you do, one plain line (answer
-every call + message, book it automatically); (4) the CTA - preferably the FREE PILOT
-(rule 13), stated honestly, otherwise a soft question. Never more than ONE ask.
+enquiry that goes to a competitor), plainly; (3) what I do, one plain line (answer every
+call + message, book it automatically); (4) the CTA - a single soft, low-friction
+question (rule 4), e.g. "worth a quick look?" or "want a 30-sec example?". Never more
+than ONE ask. No pricing, no "free", no pilot pitch in this first message.
 
 GOOGLE ANGLE (optional, only when the qualifying_signal is about missing online
 booking): you MAY replace the "problem it creates" sentence with one plain factual
@@ -133,12 +133,12 @@ know it. "books the consultation straight into your calendar" reads as compliant
 and informed; "books the treatment" reads as a liability.
 
 OTHER SERVICES (when other_services is provided): the offer is NOT just the receptionist.
-In the EMAIL body, MERGE 1-2 of the other services INTO the free-pilot line (rule 13) as a
-short parenthetical - do NOT add a separate sentence (that overflows the word budget and
-gets dropped). e.g. "I'm setting up the AI receptionist (and the WhatsApp booking + review
-follow-ups if useful) free for a few Dubai clinics to build case studies." Name at most
-TWO services, never the full menu (a list reads as generic agency spam). Only services
-from other_services - never invent one. Vary which two you pick each time. The DM stays
+In the EMAIL body, MERGE 1-2 of the other services INTO the "what I do" line (body step 3)
+as a short parenthetical - do NOT add a separate sentence (that overflows the word budget
+and gets dropped). e.g. "I set up an AI receptionist (with WhatsApp booking + review
+follow-ups if useful) that answers every call and books it for you." Name at most TWO
+services, never the full menu (a list reads as generic agency spam). Only services from
+other_services - never invent one. Vary which two you pick each time. The DM stays
 single-hook (no services line).
 
 Also produce a "dm" field: the same idea as an Instagram/WhatsApp DM, ~40 words, even
@@ -159,19 +159,20 @@ Return ONLY JSON: {"subject":"...","body":"...","dm":"...","auto_reply_comeback"
 
 Example A
 INPUT: business_name="Radiance Aesthetics", contact_name="Dr. Sara", qualifying_signal="no online booking link - 'DM to book' in Instagram bio", city="Dubai"
-OUTPUT: {"subject":"booking at Radiance","body":"Hi Dr. Sara, noticed Radiance takes bookings through Instagram DMs, which works great until it gets busy and a few slip through after hours. I set up an AI receptionist for Dubai clinics that answers every call and WhatsApp in seconds and books the slot straight into your calendar, so none get missed. Worth a quick look for Radiance?","dm":"Hi Dr. Sara! Quick one - when the DMs pile up and it's after hours, where do the booking messages go? We set up an AI receptionist that replies instantly and books them straight in. Want a 30-sec example?","auto_reply_comeback":"Ha - that auto-reply is the exact moment we'd have booked the patient instead of leaving them waiting. That's the whole idea. Want to see how it'd sound for Radiance?"}
+OUTPUT: {"subject":"booking at Radiance","body":"Hi Dr. Sara, noticed Radiance takes bookings through Instagram DMs, which works great until it gets busy and a few slip through after hours. I set up an AI receptionist that answers every call and WhatsApp in seconds and books the slot straight into your calendar, so none get missed. Worth a quick look for Radiance?","dm":"Hi Dr. Sara! Quick one - when the DMs pile up and it's after hours, where do the booking messages go? I set up an AI receptionist that replies instantly and books them straight in. Want a 30-sec example?","auto_reply_comeback":"Ha - that auto-reply is the exact moment I'd have booked the patient instead of leaving them waiting. That's the whole idea. Want to see how it'd sound for Radiance?"}
 
 Example B
 INPUT: business_name="Glow Med Spa", contact_name="", qualifying_signal="opening a second location in Dubai Marina", city="Dubai"
-OUTPUT: {"subject":"your new Marina location","body":"Hi there, congrats on the second Glow Med Spa opening in Dubai Marina. Two locations means twice the calls and DMs, and the ones that come in while your team is with a client are the easiest to lose. We put in an AI receptionist that answers every enquiry instantly, day or night, and books it for you. Want me to send a 30-second example of how it'd sound?","dm":"Congrats on the Marina opening! Quick one - with two locations now, when both front desks are busy, where do the calls and DMs land? We set up an AI receptionist that catches them and books straight in. Worth a quick look?","auto_reply_comeback":"And that's the gap right there - a busy line auto-replies while a booking waits. Ours would've answered and booked it on the spot. Want a quick example for the two locations?"}
+OUTPUT: {"subject":"your new Marina location","body":"Hi there, congrats on the second Glow Med Spa opening in Dubai Marina. Two locations means twice the calls and DMs, and the ones that come in while your team is with a client are the easiest to lose. I set up an AI receptionist that answers every enquiry instantly, day or night, and books it for you. Want me to send a 30-second example of how it'd sound?","dm":"Congrats on the Marina opening! Quick one - with two locations now, when both front desks are busy, where do the calls and DMs land? I set up an AI receptionist that catches them and books straight in. Worth a quick look?","auto_reply_comeback":"And that's the gap right there - a busy line auto-replies while a booking waits. Mine would've answered and booked it on the spot. Want a quick example for the two locations?"}
 
-Example C (route-to-human + FREE PILOT cta, first touch to a main line)
+Example C (route-to-human + soft CTA, first touch to a main line)
 INPUT: business_name="Medrose Medical Center", contact_name="", qualifying_signal="closed Fridays; no online booking", city="Dubai"
-OUTPUT: {"subject":"Friday booking messages","body":"Hi there, quick question - when Medrose is closed Fridays, where do the booking messages go? Right now they probably sit until Sunday, and a few patients book elsewhere in between. I set up an AI receptionist that replies instantly and books the consultation, even on your day off. I'm doing it free for a few Dubai clinics right now to build case studies - no cost to you, a testimonial for me if it works. Worth a look?","dm":"Hi! Quick one - when Medrose is closed Fridays, where do the booking messages go till you reopen? And who runs your front desk? I set up something that replies instantly and books the consultation on days off - doing it free for a few Dubai clinics to build case studies. Worth showing them?","auto_reply_comeback":"That's the exact moment I mean - Medrose auto-replies that you're closed, and the patient's booking just waits. Mine would've replied and booked the consultation for Sunday right then. Happy to set it up free as one of my case-study clinics - want to see it?"}
+OUTPUT: {"subject":"Friday booking messages","body":"Hi there, quick question - when Medrose is closed Fridays, where do the booking messages go? Right now they probably sit until Sunday, and a few patients book elsewhere in between. I set up an AI receptionist that replies instantly and books the consultation, even on your day off. Worth a quick look?","dm":"Hi! Quick one - when Medrose is closed Fridays, where do the booking messages go till you reopen? And who runs your front desk? I set up something that replies instantly and books the consultation on days off. Worth showing them?","auto_reply_comeback":"That's the exact moment I mean - Medrose auto-replies that you're closed, and the patient's booking just waits. Mine would've replied and booked the consultation for Sunday right then. Want to see how it'd sound?"}
 
-NOTE on honesty: in every example above the sender describes only what the SYSTEM does
-and offers a free pilot. No example claims an existing client, a result, or industry
-experience - because there are none. Keep it that way.
+NOTE on honesty: in every example the sender writes as one person ("I"), describes only
+what the SYSTEM does, never says "free", and does not pitch a price in the cold message.
+No example claims an existing client, a result, or industry experience - because there
+are none. Keep it that way.
 """
 
 LOCAL_EMAIL_SCHEMA: dict = {
@@ -379,49 +380,89 @@ SUGGESTED_REPLY_SCHEMA: dict = {
 }
 
 SUGGESTED_REPLY_SYSTEM = """\
-You draft the NEXT message a rep should send to a prospect who just replied to our
-outreach. This is a real 1:1 conversation, not a fresh cold pitch. The single most
-important rule: answer what THEY actually said. Read their reply and respond to it
-directly, like a human would in WhatsApp/DM.
+You are drafting a reply on behalf of Pranith, a solo AI automation engineer, to a
+business owner who replied to his cold outreach. He sells AI receptionist / WhatsApp
+lead-qualification / voice agent systems to clinics, med-spas, and service businesses,
+primarily in the UAE.
 
-You are given: our_offer (the services we actually sell — use ONLY these, never invent
-others), our_last_message (what we sent them, so you continue the thread naturally),
-their_reply (their words), and driving_signal (why we reached out).
+You will receive:
+- LEAD_NAME: the contact's name (may be missing)
+- BUSINESS_NAME: their business
+- BUSINESS_CONTEXT: any known detail (closed days, review rating, service type, volume)
+  from the original outreach message
+- ORIGINAL_MESSAGE_SENT: the outreach message that got this reply
+- INBOUND_REPLY: the client's actual reply text
+- PORTFOLIO_LINK: link to share when they ask for info (may be missing)
+- CURRENCY: currency to quote in (AED for UAE, INR for India, USD for US)
 
-How to respond by what they said:
-- A REQUEST FOR DETAILS ("tell me more", "know more about your proposal", "send details",
-  "how does it work") -> they asked to UNDERSTAND it, so actually EXPLAIN it. Give 2-3
-  concrete, plain steps of how it works, tied to their business (e.g. "when a message
-  comes in after hours, the assistant replies in seconds, answers common questions, and
-  books the consultation straight into your calendar"). THEN a soft next step. Do NOT
-  answer a request for details with another vague benefit line + a call ask.
-- INTEREST ("sounds good", "yes", "interested") -> one concrete detail tied to their
-  business, then propose ONE easy next step (a 10-min call, or a quick demo).
-- A QUESTION ("what do you do?", "how much?", "who is this?") -> answer it plainly and
-  briefly first, THEN a soft next step. Don't dodge the question with a pitch.
-- A PRICE question -> be honest: we tailor it to their clinic and it's quick to scope
-  on a short call; offer to set up a no-cost pilot so they see it working first.
-- AN OBJECTION / "not interested" / "we already have someone" -> acknowledge it
-  graciously, no pressure, leave one low-friction door open. Never argue.
-- LATER / "busy now" -> agree warmly, suggest reconnecting, keep it short.
+STEP 1 - CLASSIFY the inbound reply into exactly one category:
+1. INTERESTED_VAGUE - "tell me more", "what's this about", curious but no specifics given
+2. INTERESTED_SPECIFIC - asks a direct question (price, how it works, timeline)
+3. PRICE_PUSHBACK - says it's too expensive, or asks to reduce cost
+4. SEND_INFO_ONLY - asks for details/brochure without agreeing to a call
+5. NOT_NOW - polite decline or "not the right time"
+6. HARD_NO - explicit disinterest, asks to stop contacting
+7. UNCLEAR - doesn't fit cleanly; treat cautiously, ask a clarifying question rather than
+   pitching
 
-HARD RULES:
-- Ground every claim in our_offer. If unsure, ask a question instead of claiming.
-- NEVER invent numbers, results, client names, case studies, or "a spa we work with"
-  social proof. No made-up stats ("books 15 extra appointments"). If you have no real
-  proof, offer the free pilot so THEY see it work - that is our proof.
-- We ASSIST the front desk (catch missed/after-hours enquiries), we do NOT replace their
-  staff. Never say we replace their receptionist or team.
-- DHA-compliant: we book a consultation/discovery, never promise a treatment or result.
-- Match their channel + energy. WhatsApp/Instagram = short, warm, lowercase-ok, 1-2
-  short paragraphs. Email = a touch more structured. Under 120 words either way.
-- One clear next step, easy to say yes to. No buzzwords, no hype, no markdown.
-- No vague hype phrases ("steady stream of reviews", "without extra work", "grow your
-  business", "24/7 24/7"). Say the concrete thing it does instead.
-- Stay on the thread's topic. Don't bolt on unrelated services (reviews, marketing) the
-  prospect never raised - answer what THIS conversation is about.
-- NEVER use em dashes or en dashes ("—" / "–") - they read as AI-written. Use commas,
-  periods, or plain hyphens instead.
+STEP 2 - GENERATE the reply following the rules for that category:
+
+INTERESTED_VAGUE:
+- Ask 1-2 qualifying questions max (rough enquiry/booking volume, whether they have any
+  automation already)
+- Give ONE sentence describing what you'd set up in outcome language, not feature language
+- Offer a short paid pilot (CURRENCY 1,500-2,500, ~1 week) as the entry point - never
+  "free"
+- End by asking for a 15-min call, offer 2 loose time windows
+
+INTERESTED_SPECIFIC:
+- Answer their exact question directly and briefly first
+- Then bridge to the pilot offer and a call ask
+- If they asked about price, give the pilot range, not a fixed full quote - full pricing
+  is a call/discovery output, not a DM output
+
+PRICE_PUSHBACK:
+- Never drop the number in a DM negotiation
+- Reframe: quantify what a missed enquiry/booking likely costs them monthly, using their
+  own business type as a reference point (do not invent specific stats about their
+  business - use general, defensible framing like "a single missed enquiry a day adds up
+  fast")
+- Offer to adjust scope (start with WhatsApp only, add voice later) rather than cutting
+  price
+- Re-offer the paid pilot as the low-risk way to test value before committing further
+
+SEND_INFO_ONLY:
+- Give a tight 2-3 sentence summary of the offer (WhatsApp/voice receptionist, instant
+  reply, booking capture)
+- Include PORTFOLIO_LINK if provided
+- Still end with a soft call ask - do not let this become an info-only thread with no next
+  step
+
+NOT_NOW:
+- Thank them, no pressure
+- Ask permission to check back in 4-6 weeks
+- Keep it under 3 sentences
+
+HARD_NO:
+- One line, polite, no pitch, no follow-up ask
+- Respect it completely - do not soft-pitch again
+
+UNCLEAR:
+- Do not pitch. Ask one short clarifying question instead.
+
+STYLE RULES (apply to every category):
+- Write as "I", never "we" - this is one person, not a company
+- No exclamation-mark stacking, no corporate tone, no "circle back" / "touch base" filler
+- Reference BUSINESS_CONTEXT naturally if relevant (their specific detail from the
+  original message) - do not invent new details about their business you don't have
+- Never say "free" anywhere
+- Keep replies under 80 words unless SEND_INFO_ONLY requires more
+- No em-dashes; use commas or periods
+- Quote money in CURRENCY only
+- DHA-compliant: you book a consultation/discovery, never promise a treatment or result
+
+OUTPUT: put ONLY the drafted reply text (no category label, no explanation) in the
+suggested_response field of the returned JSON.
 """
 
 
@@ -429,24 +470,27 @@ def generate_suggested_reply(*, company: dict, their_message: str,
                              signal: str | None = None,
                              channel: str = "email",
                              services: str | None = None,
-                             our_last_message: str | None = None) -> dict:
-    """Draft a suggested next reply grounded in the prospect's actual message, the
-    thread so far (our_last_message), and the services we actually sell. Returns
+                             our_last_message: str | None = None,
+                             lead_name: str | None = None,
+                             portfolio_link: str | None = None,
+                             currency: str = "AED") -> dict:
+    """Draft the next reply to send after a prospect responds to cold outreach. Classifies
+    the inbound reply and answers in-category (see SUGGESTED_REPLY_SYSTEM). Returns
     {"suggested_response": str} or {"_provider_error": True} (callers then OMIT the
     suggestion — never fabricate one)."""
-    facts = {
-        "business_name": company.get("name"),
-        "channel": channel,
-        "our_offer": (services or "").strip() or None,
-        "our_last_message": (our_last_message or "").strip()[:900] or None,
-        "driving_signal": signal,
-        "their_reply": (their_message or "")[:1200],
+    fields = {
+        "LEAD_NAME": (lead_name or "").strip() or None,
+        "BUSINESS_NAME": company.get("name"),
+        "BUSINESS_CONTEXT": signal,
+        "ORIGINAL_MESSAGE_SENT": (our_last_message or "").strip()[:900] or None,
+        "INBOUND_REPLY": (their_message or "")[:1200],
+        "PORTFOLIO_LINK": (portfolio_link or "").strip() or None,
+        "CURRENCY": currency or "AED",
     }
+    lines = "\n".join(f"{k}: {v}" for k, v in fields.items() if v is not None)
     user = (
-        "Continue this conversation. Answer their_reply directly, grounded only in "
-        f"our_offer.\n\nContext (use only what's real, skip nulls):\n{facts}\n\n"
-        "Write the single next message to send. Return JSON "
-        "{\"suggested_response\": \"...\"}."
+        f"{lines}\n\nClassify INBOUND_REPLY, then write the single next message to send. "
+        "Return JSON {\"suggested_response\": \"...\"}."
     )
     result = complete_json(system=SUGGESTED_REPLY_SYSTEM, user=user,
                            schema_name="SuggestedReply", schema=SUGGESTED_REPLY_SCHEMA,
@@ -490,7 +534,7 @@ def _services_ps(services: str | None, body: str) -> str | None:
         return None
     listed = extras[0] if len(extras) == 1 else (
         ", ".join(extras[:-1]) + " and " + extras[-1])
-    return f"P.S. We also set up {listed} if any of that would help."
+    return f"P.S. I also set up {listed} if any of that would help."
 
 
 def generate_outreach(
@@ -505,6 +549,7 @@ def generate_outreach(
     variants: int = 2,
     local: bool = False,
     booking_link: str | None = None,
+    portfolio_link: str | None = None,
     greeting_name: str | None = None,
     market_fact: str | None = None,
     language: str = "en",
@@ -548,12 +593,29 @@ def generate_outreach(
         ret_shape = ('{"subject":...,"body":...,"dm":...,"dm_ar":...}' if bilingual
                      else '{"subject":...,"body":...,"dm":...}')
         services_line = (f"other_services={services}\n" if (services or "").strip() else "")
+        # FOLLOW-UPS (follow_up >= 1) may carry a link to help close — the "no links"
+        # rule protects the COLD first touch only. Book-a-call link and/or portfolio.
+        followup_cta = ""
+        if follow_up:
+            bl, pl = (booking_link or "").strip(), (portfolio_link or "").strip()
+            if bl or pl:
+                asks = []
+                if bl:
+                    asks.append(f"invite them to grab a quick call using this exact link "
+                                f"(include verbatim): {bl}")
+                if pl:
+                    asks.append(f"you may point them to a couple of examples at this exact "
+                                f"link (include verbatim): {pl}")
+                followup_cta = (
+                    "FOLLOW_UP_CTA: this is a follow-up, NOT the cold first touch, so you MAY "
+                    "include a link now. End by " + " and ".join(asks) +
+                    ". At most ONE booking link. Keep it warm and short, no pressure.\n")
         user = (
             f"{prefix}business_name={company.get('name')}\n"
             f"contact_name={greeting_name or ''}\n"
             f"qualifying_signal={qualifying_signal}\n"
             f"city={city}\n"
-            f"{facts_line}{services_line}\n"
+            f"{facts_line}{services_line}{followup_cta}\n"
             "Write the email + dm. You may weave in AT MOST ONE of the optional_real_facts "
             f"if it makes the message feel more personal. {ar_line}"
             f"Return JSON {ret_shape}."

@@ -48,6 +48,9 @@ class Settings(Base, UUIDPk, Timestamps):
     # Optional booking/scheduling link injected into every draft's CTA. If empty, the
     # CTA falls back to "reply to this email" — never "book a slot" without a real link.
     booking_link: Mapped[str | None] = mapped_column(String(500))
+    # Optional portfolio / examples link. Not for cold email #1 (kept link-free for
+    # deliverability) — used in FOLLOW-UPS and reply drafts to help close.
+    portfolio_link: Mapped[str | None] = mapped_column(String(500))
     # 'en' = English drafts only; 'en+ar' = also produce an Arabic WhatsApp/DM variant
     # (UAE/GCC table-stakes: Arabic-first owners reply more).
     draft_language: Mapped[str] = mapped_column(String(10), default="en")

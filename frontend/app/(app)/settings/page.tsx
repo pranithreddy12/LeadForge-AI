@@ -40,6 +40,7 @@ type SettingsData = {
   outreach_tone: "professional" | "friendly" | "direct";
   outreach_send_mode: "manual" | "automated";
   booking_link: string | null;
+  portfolio_link: string | null;
   draft_language: "en" | "en+ar";
   outreach_services: string | null;
   max_emails_per_day: number;
@@ -130,7 +131,7 @@ const EMPTY: SettingsData = {
   discovery_mode: "b2b", target_business_types: [], target_locations: [],
   search_radius_miles: 25, min_reviews: 10, max_results_per_run: 20,
   icp_name: "", employee_min: null, employee_max: null, target_industries: [], target_geography: [],
-  outreach_mode: ["email"], outreach_tone: "professional", outreach_send_mode: "manual", booking_link: "", draft_language: "en", outreach_services: "", max_emails_per_day: 50, max_emails_per_run: 25,
+  outreach_mode: ["email"], outreach_tone: "professional", outreach_send_mode: "manual", booking_link: "", portfolio_link: "", draft_language: "en", outreach_services: "", max_emails_per_day: 50, max_emails_per_run: 25,
   contact_find_hunter: true, contact_find_scrape: true, contact_find_linkedin: true, validate_emails: true,
   filter_min_score: 65, filter_enforce_icp_size: true,
   whatsapp_webhook_url: "",
@@ -178,7 +179,7 @@ export default function SettingsPage() {
       icp_name: f.icp_name, employee_min: f.employee_min, employee_max: f.employee_max,
       target_industries: f.target_industries, target_geography: f.target_geography,
       outreach_mode: f.outreach_mode, outreach_tone: f.outreach_tone,
-      outreach_send_mode: f.outreach_send_mode, booking_link: f.booking_link ?? "",
+      outreach_send_mode: f.outreach_send_mode, booking_link: f.booking_link ?? "", portfolio_link: f.portfolio_link ?? "",
       draft_language: f.draft_language, outreach_services: f.outreach_services ?? "",
       max_emails_per_day: f.max_emails_per_day, max_emails_per_run: f.max_emails_per_run,
       contact_find_hunter: f.contact_find_hunter, contact_find_scrape: f.contact_find_scrape,
@@ -313,8 +314,11 @@ export default function SettingsPage() {
                   <p className="mt-2 text-xs text-amber-500">Automated mode sends real emails/WhatsApp without review. Keep Manual until you trust the drafts.</p>
                 )}
               </Field>
-              <Field label="Booking link" hint="Calendly/Cal.com/etc. Injected into every draft's CTA. If empty, drafts ask for a reply instead — never a 'book a slot' with no link.">
+              <Field label="Booking link" hint="Calendly/Cal.com/etc. Kept OUT of the cold first email (deliverability), then added to FOLLOW-UPS and reply drafts as a 'grab a call' CTA to help close.">
                 <Input value={f.booking_link ?? ""} onChange={(e) => set({ booking_link: e.target.value })} placeholder="https://cal.com/you/15min (optional)" />
+              </Field>
+              <Field label="Portfolio link" hint="Examples / past work to share when a lead asks for more. Used in follow-ups and 'send info' replies — never in the cold first email.">
+                <Input value={f.portfolio_link ?? ""} onChange={(e) => set({ portfolio_link: e.target.value })} placeholder="https://yoursite.com/work (optional)" />
               </Field>
               <Field label="Other services" hint="Comma-separated. The FIRST is your primary offer (the email's hook); the rest become a short P.S. line — 'We also set up X, Y…'. Only list what you genuinely deliver.">
                 <Input value={f.outreach_services ?? ""} onChange={(e) => set({ outreach_services: e.target.value })}
