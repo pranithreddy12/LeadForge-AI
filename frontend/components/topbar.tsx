@@ -4,6 +4,7 @@ import { UserButton, OrganizationSwitcher } from "@clerk/nextjs";
 import { Search, Sparkles, Command } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { clerkConfigured } from "@/lib/clerk-config";
+import { NotificationBell } from "@/components/notification-bell";
 
 export function Topbar() {
   return (
@@ -22,6 +23,8 @@ export function Topbar() {
       <button className="hidden md:flex items-center gap-2 rounded-md border border-white/10 bg-card/40 px-3 py-1.5 text-xs text-muted-foreground hover:text-foreground">
         <Sparkles className="h-3.5 w-3.5 text-brand-400" /> Ask AI
       </button>
+
+      <NotificationBell />
 
       {clerkConfigured ? (
         <>

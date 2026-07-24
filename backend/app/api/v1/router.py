@@ -22,6 +22,7 @@ from app.api.v1.routes import (
     optout,
     data_export,
     sent,
+    notifications,
 )
 
 api_router = APIRouter()
@@ -48,3 +49,4 @@ api_router.include_router(today.pipeline_router)
 api_router.include_router(optout.router)
 api_router.include_router(data_export.router)
 api_router.include_router(sent.router)
+api_router.include_router(notifications.router)
