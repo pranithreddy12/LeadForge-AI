@@ -81,9 +81,9 @@ export function NotificationBell() {
         )}
 
         {count > 0 && (
-          <Link href="/pipeline"
+          <Link href="/followups"
                 className="block border-t border-white/10 px-3 py-2 text-center text-xs text-brand-300 hover:text-brand-200">
-            Open Pipeline
+            Open Follow-ups
           </Link>
         )}
       </DropdownMenuContent>

@@ -67,7 +67,7 @@ def list_notifications(db: Session = Depends(get_db),
                     "title": f"Follow-up #{max(1, m.step - 1)} ready for {co.name}",
                     "detail": m.subject or "Draft ready to send",
                     "days_ago": age,
-                    "href": "/pipeline",
+                    "href": "/followups",
                 })
         elif age >= _FOLLOWUP_DUE_DAYS:
             items.append({
@@ -78,7 +78,7 @@ def list_notifications(db: Session = Depends(get_db),
                 "title": f"Time to follow up with {co.name}",
                 "detail": f"Contacted {age} days ago, no reply yet — send a nudge.",
                 "days_ago": age,
-                "href": "/pipeline",
+                "href": "/followups",
             })
 
     # Ready-to-send first, then due; oldest-contacted first within each (most overdue up top).
